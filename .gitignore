@@ -54,3 +54,4 @@ Thumbs.db
 *.tgz
 *.orig
 tree.txt
+*__pycache__*
