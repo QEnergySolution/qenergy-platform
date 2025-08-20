@@ -61,11 +61,11 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
 # Set environment variables
-cp .env.example .env
+cp env.example .env
 # Edit .env with your database configuration
 
 # Start development server
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8002
 ```
 
 ### 4. Database Setup
@@ -73,8 +73,11 @@ uvicorn app.main:app --reload --port 8000
 # Create PostgreSQL database
 createdb qenergy_platform
 
-# Run migrations (when available)
-alembic upgrade head
+# Run setup script to create tables and sample data
+psql qenergy_platform < backend/setup-database.sql
+
+# Verify setup
+psql qenergy_platform -c "SELECT COUNT(*) FROM projects;"
 ```
 
 ## 🔧 Development
@@ -100,19 +103,23 @@ pnpm type-check
 conda activate qenergy-backend
 
 # Start development server
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8002
+
+# Test API endpoints
+curl http://localhost:8002/api/health
 
 # Run tests (when available)
 pytest
 
-# Run database migrations
+# Run database migrations (when Alembic is set up)
 alembic revision --autogenerate -m "description"
 alembic upgrade head
 ```
 
 ### API Documentation
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
+- **Swagger UI**: http://localhost:8002/docs
+- **ReDoc**: http://localhost:8002/redoc
+- **Health Check**: http://localhost:8002/api/health
 
 ## 📁 Project Structure
 
@@ -145,15 +152,20 @@ backend/
 
 ### Frontend (`.env.local`)
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:8000/api
+NEXT_PUBLIC_API_URL=http://localhost:8002/api
 NEXT_PUBLIC_APP_NAME=QEnergy Platform
 ```
 
 ### Backend (`.env`)
 ```env
-DATABASE_URL=postgresql://user:password@localhost:5432/qenergy_platform
-SECRET_KEY=your-secret-key-here
-OPENAI_API_KEY=your-openai-api-key
+DATABASE_URL=postgresql://qenergy_user:qenergy_password@localhost:5432/qenergy_platform
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=qenergy_platform
+DB_USER=qenergy_user
+DB_PASSWORD=qenergy_password
+SECRET_KEY=your-super-secret-key-change-this-in-production
+OPENAI_API_KEY=your-openai-api-key-here
 ```
 
 ## 🚀 Deployment
@@ -169,3 +181,9 @@ docker-compose up --build
 2. Set production environment variables
 3. Run backend with production server (Gunicorn)
 4. Configure reverse proxy (Nginx)
+
+## 🔄 Version History
+
+- **v0.3.0** - Database setup complete, FastAPI backend running
+- **v0.2.0** - Added AI analysis features
+- **v0.1.0** - Project foundation and UI components
