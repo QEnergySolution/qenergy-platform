@@ -27,13 +27,44 @@ qenergy-platform/
 
 ## 🛠️ Installation
 
-### 1. Clone Repository
+### Option 1: One-Click Installation (Recommended)
+
+#### macOS/Linux
+```bash
+# Make scripts executable
+chmod +x scripts/*.sh
+
+# Install everything automatically
+./scripts/install.sh
+
+# Start all services
+./scripts/start.sh
+
+# Test everything
+./scripts/test.sh
+```
+
+#### Windows
+```cmd
+# Run as Administrator
+scripts\install.bat
+
+# Start all services
+scripts\start.bat
+
+# Test everything (requires Git Bash or WSL)
+./scripts/test.sh
+```
+
+### Option 2: Manual Installation
+
+#### 1. Clone Repository
 ```bash
 git clone <repository-url>
 cd qenergy-platform
 ```
 
-### 2. Frontend Setup
+#### 2. Frontend Setup
 ```bash
 # Install dependencies
 pnpm install
@@ -46,7 +77,7 @@ cp frontend/.env.example frontend/.env.local
 pnpm dev
 ```
 
-### 3. Backend Setup
+#### 3. Backend Setup
 ```bash
 # Navigate to backend directory
 cd backend
@@ -68,7 +99,7 @@ cp env.example .env
 uvicorn app.main:app --reload --port 8002
 ```
 
-### 4. Database Setup
+#### 4. Database Setup
 ```bash
 # Create PostgreSQL database
 createdb qenergy_platform
