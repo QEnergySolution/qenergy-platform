@@ -1,7 +1,7 @@
 "use client"
 
-import type React from "react"
-import { useState, useMemo, useRef } from "react"
+import React from "react"
+import { useState, useMemo, useRef, useEffect } from "react"
 import { Search, Plus, Minus, Check, X, Upload, FolderCog } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useLanguage } from "@/hooks/use-language"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
+import { fetchProjects } from "@/lib/services/projects"
 
 interface Project {
   id: string
@@ -18,36 +19,28 @@ interface Project {
   active: boolean
 }
 
-const initialProjects: Project[] = [
-  { id: "1", code: "2ES00009", name: "Boedo 1", portfolio: "Herrera", active: true },
-  { id: "2", code: "2ES00010", name: "Boedo 2", portfolio: "Herrera", active: true },
-  { id: "3", code: "2DE00001", name: "Illmersdorf", portfolio: "Illmersdorf", active: true },
-  { id: "4", code: "2DE00002", name: "Garwitz", portfolio: "Lunaco", active: false },
-  { id: "5", code: "2DE00003", name: "Matzlow", portfolio: "Lunaco", active: true },
-  { id: "6", code: "2DE00004", name: "IM 24 Tangerhütte", portfolio: "Aristoteles_1", active: true },
-  { id: "7", code: "2DE00005", name: "IM 07 Blankensee", portfolio: "Aristoteles_2", active: false },
-  { id: "8", code: "2DE00006", name: "IM 44 Gondorf", portfolio: "Aristoteles_3", active: true },
-  { id: "9", code: "2DE00007", name: "Letzendorf", portfolio: "Advice2Energy", active: true },
-  { id: "10", code: "2DE00013", name: "Bosseborn_2", portfolio: "Bosseborn_2", active: true },
-  { id: "11", code: "2DE00015", name: "Wethen", portfolio: "Wethen", active: false },
-  { id: "12", code: "2DE00016", name: "Oberndorf", portfolio: "Oberndorf", active: true },
-  { id: "13", code: "2DE00017", name: "IM 16 Bad Freienwalde", portfolio: "Aristoteles_2", active: true },
-  { id: "14", code: "2DE00018", name: "IM 37 Barnim", portfolio: "Aristoteles_2", active: true },
-  { id: "15", code: "2DE00019", name: "Dahlen", portfolio: "Dahlen", active: false },
-  { id: "16", code: "2DE00023", name: "IM 18 Reichenberg", portfolio: "Aristoteles_2", active: true },
-  { id: "17", code: "2ES00007", name: "Cabrovales 1", portfolio: "Cabrovales 1", active: true },
-  { id: "18", code: "2ES00011", name: "Torozos 1", portfolio: "Zaratan_PV", active: true },
-  { id: "19", code: "2ES00012", name: "Torozos 2", portfolio: "Zaratan_PV", active: true },
-  { id: "20", code: "2ES00013", name: "Torozos 3", portfolio: "Zaratan_PV", active: true },
-]
-
 export function ProjectManagement() {
-  const [projects, setProjects] = useState<Project[]>(initialProjects)
+  const [projects, setProjects] = useState<Project[]>([])
   const [searchKeyword, setSearchKeyword] = useState("")
   const [showActiveOnly, setShowActiveOnly] = useState(true)
   const [selectedProjects, setSelectedProjects] = useState<string[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { t } = useLanguage()
+
+  useEffect(() => {
+    let cancelled = false
+    fetchProjects()
+      .then((data) => {
+        if (!cancelled) setProjects(data)
+      })
+      .catch((error) => {
+        console.error("Failed to fetch projects:", error)
+        if (!cancelled) setProjects([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const filteredProjects = useMemo(() => {
     return projects.filter((project) => {

@@ -57,3 +57,5 @@ tree.txt
 *__pycache__*
 todolist.md
 frontend/.next
+test.md
+frontend/node_modules
