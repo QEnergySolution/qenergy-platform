@@ -63,6 +63,7 @@ start_backend() {
     if ! is_service_running 8002; then
         print_status "Starting backend..."
         cd backend
+        source /opt/homebrew/Caskroom/miniforge/base/etc/profile.d/conda.sh
         conda activate qenergy-backend
         uvicorn app.main:app --reload --port 8002 --host 0.0.0.0 &
         cd ..
@@ -77,7 +78,7 @@ start_backend() {
 start_frontend() {
     if ! is_service_running 3000; then
         print_status "Starting frontend..."
-        pnpm dev &
+        pnpm dev:fe &
         sleep 10
         print_success "Frontend started on http://localhost:3000"
     else
@@ -132,7 +133,11 @@ stop_services() {
     print_status "Stopping all services..."
     
     # Stop frontend
-    pkill -f "pnpm dev" 2>/dev/null || true
+    pkill -f "pnpm.*frontend.*dev" 2>/dev/null || true
+    # Fallback: kill any process bound to port 3000
+    if lsof -i :3000 >/dev/null 2>&1; then
+        kill -9 $(lsof -t -i :3000) 2>/dev/null || true
+    fi
     
     # Stop backend
     pkill -f "uvicorn app.main:app" 2>/dev/null || true
