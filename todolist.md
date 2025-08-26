@@ -87,20 +87,33 @@ Acceptance for Phase 2A:
 
 ---
 
-### P0 Phase 2B — Report Upload Popup (Parse & Apply)
+### P0 Phase 2B — Report Upload Popup (Parse & Apply) — ✅ COMPLETED 2025-08-26
 Goal: Upload files to auto-fill report cards without immediate persistence.
-- [ ] Backend: Report Upload
+- [x] Backend: Report Upload — 2025-08-26
   - `POST /api/reports/upload` accepts docx/pdf/txt/md; parse and return structured rows
   - Constraints: type whitelist, size limits, standardized error schema
   - DOCX parser extracts paragraphs and tables (not just paragraphs)
   - Storage: local temp; cleanup policy; plan for S3/MinIO later
-- [ ] Frontend: Upload Popup
+- [x] Backend: Bulk Folder Upload (Category-separated files only) — 2025-08-26
+  - `POST /api/reports/upload/bulk` accepts multiple files in one request
+  - Constraints: docx only (for now), per-file size limit, total files limit, standardized per-file result/errors
+  - Filename parser for pattern: `YYYY_CW##_{DEV|EPC|FINANCE|INVESTMENT}.docx`
+    - Mapping: DEV→Development, EPC→EPC, FINANCE→Finance, INVESTMENT→Investment
+    - Extract `year`, `cw_label` (e.g., CW01), and `category`; ignore non-conforming names
+  - DOCX parser supports paragraphs and tables; unify to rows shape
+  - Temp storage & cleanup (TTL) for uploaded files
+- [x] Frontend: Upload Popup — 2025-08-26
   - Drag & drop; show detected rows; apply-to-cards (not persisted)
   - Unmatched items flagged for manual review
   - Service layer wiring + tests
+- [x] Frontend: Bulk Folder Picker & Preview — 2025-08-26
+  - Folder selection (webkitdirectory); filter and preview only matching files
+  - Show per-file parsed rows and errors; allow apply-to-cards by file/category
+  - Service: bulk upload function; error handling and tests
 
 Acceptance for Phase 2B:
 - Supported files parse into structured data; apply-to-cards works; errors clear
+- Bulk folder import: matching files parsed; invalid names/types reported per-file
 - No DB writes until user clicks Save in cards editor
 
 ---

@@ -20,6 +20,7 @@ interface UploadResult {
   fileName: string
   projectsAdded: number
   status: "success" | "error"
+  errors?: { code: string; message: string }[]
 }
 
 const sampleReports: ReportData[] = [
@@ -93,6 +94,7 @@ export function ReportUpload() {
   })
   const [uploadResults, setUploadResults] = useState<UploadResult[]>([])
   const [isUploading, setIsUploading] = useState(false)
+  const [bulkFiles, setBulkFiles] = useState<File[]>([])
 
   const currentYear = new Date().getFullYear()
   const years = Array.from({ length: currentYear - 2024 + 1 }, (_, i) => 2024 + i)
@@ -177,6 +179,35 @@ export function ReportUpload() {
       Finance: null,
       Investment: null,
     })
+  }
+
+  const handleBulkUpload = async () => {
+    setIsUploading(true)
+    try {
+      const { uploadBulk } = await import("@/lib/api/reports")
+      const res = await uploadBulk(bulkFiles)
+      const results = res.results.map((r: any) => (
+        r.status === "ok"
+          ? {
+              category: r.category ?? "Unknown",
+              fileName: r.fileName,
+              projectsAdded: Array.isArray(r.rows) ? r.rows.length : 0,
+              status: "success" as const,
+            }
+          : {
+              category: "",
+              fileName: r.fileName,
+              projectsAdded: 0,
+              status: "error" as const,
+              errors: r.errors ?? [],
+            }
+      ))
+      setUploadResults(results)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setIsUploading(false)
+    }
   }
 
   return (
@@ -341,7 +372,7 @@ export function ReportUpload() {
                       <div className="relative">
                         <input
                           type="file"
-                          accept=".pdf,.doc,.docx,.xls,.xlsx"
+                          accept=".docx"
                           onChange={(e) => handleFileSelect(category, e.target.files?.[0] || null)}
                           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                         />
@@ -364,23 +395,38 @@ export function ReportUpload() {
                 </h3>
                 <div className="grid grid-cols-2 gap-6">
                   {uploadResults.map((result, index) => (
-                    <div
-                      key={index}
-                      className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-6"
-                    >
-                      <div className="flex items-center gap-4">
-                        <FileText className="w-6 h-6 text-green-600" />
-                        <div className="flex-1">
-                          <div className="font-semibold text-green-800 dark:text-green-200 text-lg">
-                            {result.category}
-                          </div>
-                          <div className="text-green-600 dark:text-green-300">{result.fileName}</div>
-                          <div className="font-medium text-green-700 dark:text-green-200">
-                            {result.projectsAdded} {t("projectsAdded")}
+                    <div key={index}>
+                      {result.status === "success" ? (
+                        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-6">
+                          <div className="flex items-center gap-4">
+                            <FileText className="w-6 h-6 text-green-600" />
+                            <div className="flex-1">
+                              <div className="font-semibold text-green-800 dark:text-green-200 text-lg">
+                                {result.category}
+                              </div>
+                              <div className="text-green-600 dark:text-green-300">{result.fileName}</div>
+                              <div className="font-medium text-green-700 dark:text-green-200">
+                                {result.projectsAdded} {t("projectsAdded")}
+                              </div>
+                            </div>
+                            <CheckCircle className="w-6 h-6 text-green-500" />
                           </div>
                         </div>
-                        <CheckCircle className="w-6 h-6 text-green-500" />
-                      </div>
+                      ) : (
+                        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6">
+                          <div className="flex items-start gap-4">
+                            <FileText className="w-6 h-6 text-red-600" />
+                            <div className="flex-1">
+                              <div className="font-semibold text-red-800 dark:text-red-200 text-lg">{result.fileName}</div>
+                              <ul className="mt-2 list-disc list-inside text-red-700 dark:text-red-300 text-sm">
+                                {(result.errors || []).map((e, i) => (
+                                  <li key={i}>{e.code}: {e.message}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -393,6 +439,41 @@ export function ReportUpload() {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Bulk Folder Import */}
+          <div className="border-t pt-6">
+            <h3 className="text-xl font-semibold mb-1">Import from Folder</h3>
+            <p className="text-sm text-muted-foreground mb-3">Only .docx files will be processed.</p>
+            <div className="flex items-center gap-4">
+              <div className="relative">
+                <input
+                  type="file"
+                  accept=".docx"
+                  // @ts-ignore - webkitdirectory is non-standard but widely supported
+                  webkitdirectory="true"
+                  multiple
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || []).filter((f) => f.name.toLowerCase().endsWith('.docx'))
+                    setBulkFiles(files)
+                  }}
+                />
+                <Button variant="outline" className="bg-transparent py-2 text-sm">
+                  {t("chooseFolder")}
+                </Button>
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {bulkFiles.length > 0 ? `${bulkFiles.length} files selected` : t("noFilesSelected")}
+              </div>
+              <Button
+                variant="default"
+                disabled={isUploading || bulkFiles.length === 0}
+                onClick={handleBulkUpload}
+              >
+                {isUploading ? t("uploading") : t("uploadFolder")}
+              </Button>
+            </div>
           </div>
 
           {/* Action Buttons */}
