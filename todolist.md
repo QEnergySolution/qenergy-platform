@@ -67,14 +67,14 @@ Acceptance for Phase 1:
 
 ---
 
-### P0 Phase 2A — Data Foundation & Migrations
+### P0 Phase 2A — Data Foundation & Migrations — ✅ COMPLETED 2025-08-26
 Goal: Establish minimal, correct data layer for reports and analysis.
-- [ ] Backend: Database Infrastructure
+- [x] Backend: Database Infrastructure — 2025-08-26
   - Database connection & session (`backend/app/database.py` using `DATABASE_URL`)
   - SQLAlchemy models: `projects` (minimal), `project_history`, `weekly_report_analysis`
   - Pydantic schemas for request/response
   - Alembic baseline + first migration reflecting current schema
-- [ ] Indexes & Constraints
+- [x] Indexes & Constraints — 2025-08-26
   - `projects.project_code` UNIQUE
   - `weekly_report_analysis UNIQUE(project_code, cw_label, language)` + composite read index
   - Range/read indexes for `project_history` (project_code, cw_label)
@@ -256,7 +256,7 @@ Acceptance for Phase 4:
 ### P1 Phase 6 — Developer Experience & Ops
 Goal: Improve development workflow and deployment.
 - [x] Cross-platform deployment scripts for one-click installation — 2025-08-20
-- [ ] Alembic baseline + first migration reflecting current schema
+- [x] Alembic baseline + first migration reflecting current schema — 2025-08-26
 - [ ] Docker Compose (postgres + backend; optional frontend)
 - [ ] Makefile / task runner for common commands
 - [ ] CI/CD pipeline setup
