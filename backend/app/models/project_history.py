@@ -16,6 +16,7 @@ class ProjectHistory(Base):
     title: Mapped[str | None] = mapped_column(String(255))
     summary: Mapped[str] = mapped_column(SAText, nullable=False)
     next_actions: Mapped[str | None] = mapped_column(SAText)
+    source_text: Mapped[str | None] = mapped_column(SAText)
     owner: Mapped[str | None] = mapped_column(String(255))
     attachment_url: Mapped[str | None] = mapped_column(String(1024))
     created_at: Mapped[str] = mapped_column(TIMESTAMP(timezone=True), server_default=text("NOW()"), nullable=False)

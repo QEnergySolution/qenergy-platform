@@ -147,6 +147,7 @@ Acceptance for Phase 2B:
 
 ### P0 Phase 2B+ - Backend Report Importer
 
+* [ ] added source_text (TEXT, nullable) to project_history
 * [ ] LLM-based parsing with LangChain + Azure OpenAI
   * Dependencies: add `langchain`, `langchain-openai` (Azure), pin versions
   * Pydantic output schema `ParsedHistoryRow` (per project entry):
@@ -413,6 +414,7 @@ CREATE TABLE project_history (
   next_actions TEXT,
   owner VARCHAR(255),
   attachment_url VARCHAR(1024),
+  source_text TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_by VARCHAR(255) NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

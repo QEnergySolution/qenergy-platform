@@ -24,6 +24,7 @@ class ProjectHistoryBase(BaseModel):
     owner: str | None = Field(default=None, max_length=255)
     attachment_url: str | None = Field(default=None, max_length=1024)
     source_upload_id: str | None = None
+    source_text: str | None = None
 
 
 class ProjectHistoryCreate(ProjectHistoryBase):
