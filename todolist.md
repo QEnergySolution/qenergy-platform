@@ -147,11 +147,11 @@ Acceptance for Phase 2B:
 
 ### P0 Phase 2B+ - Backend Report Importer
 
-* [ ] added source_text (TEXT, nullable) to project_history
+* [x] added source_text (TEXT, nullable) to project_history
 * [ ] LLM-based parsing with LangChain + Azure OpenAI
   * Dependencies: add `langchain`, `langchain-openai` (Azure), pin versions
   * Pydantic output schema `ParsedHistoryRow` (per project entry):
-    - `project_name: str`, `category: Literal('Development','EPC','Finance','Investment')|None`, `title: str|None`, `summary: str`, `next_actions: str|None`, `owner: str|None`
+    - `project_name: str`, `category: Literal('Development','EPC','Finance','Investment')|None`, `title: str|None`, `summary: str`, `next_actions: str|None`, `owner: str|None`, `source_text (TEXT, nullable)`
   * Prompt: system (domain + output contract), user (chunk + filename meta: year/cw/category)
   * Chain: Azure Chat model (endpoint/key/deployment/version), JSON structured output → list[`ParsedHistoryRow`]
   * Chunking: `python-docx` → paragraphs + table cells; split by headings; token-safe chunks
