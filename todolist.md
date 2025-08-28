@@ -118,6 +118,84 @@ Acceptance for Phase 2B:
 
 ---
 
+### P0 Phase 2B- — Report Importer (Schema Modification)
+
+* [ ] **Database:** Create `report_uploads` table; add column `project_history.source_upload_id UUID REFERENCES report_uploads(id) ON DELETE SET NULL`; add index `idx_project_history_source_upload_id`.
+* [ ] **Migration scripts:** Backward-compatible migration (no data loss) and rollback scripts.
+* [ ] **Domain/DAO:** Add ReportUploads repository (`create`, `get_by_sha256`, `mark_parsed`); support writing `source_upload_id` when inserting `ProjectHistory`.
+* [ ] **Upload entry (CLI/backend):**
+
+  * [ ] Support uploading a single `.docx` file. (interate untill uploads/2025_CW01_DEV.docx pass)
+  * [ ] Support uploading an entire folder (recursive scan of `uploads/`). (interate untill ./uploads pass)
+  * [ ] Compute `sha256`; if duplicate, skip storing the file entity and reuse the existing `report_uploads` record.
+* [ ] **Parsing pipeline (docx → project\_history\[\*]):**
+
+  * [ ] Before parsing, insert a `report_uploads(status='received')` row.
+  * [ ] While generating each `project_history`, **must** set `source_upload_id=report_uploads.id`.
+  * [ ] On success set upload `status='parsed'`; on error set `status='failed'` and write `notes`.
+* [ ] **Acceptance (TDD: tests first):**
+
+  * [ ] Unit: `report_uploads` create/deduplicate (`sha256` UNIQUE); state transitions (received→parsed/failed).
+  * [ ] Unit: importing one docx yields N `project_history` rows; each has non-null `source_upload_id` and is back-referenceable.
+  * [ ] Integration: bulk import a folder under `uploads/` with multiple files/projects/weeks; failed files marked `failed` without blocking others.
+  * [ ] Query cases: given a `report_uploads.id`, fetch all linked `project_history`; given a `project_history.id`, fetch its upload metadata.
+* [ ] **Docs:** Add an “Upload & Import” flow diagram to README, CLI examples, and error-handling notes.
+
+---
+
+### P0 Phase 2B+ — Report Importer (Folder → Database)
+
+**Goal:** Read .docx reports from a folder, parse project entries, and persist to DB.
+
+> **Note:** Items that duplicate Phase 2B- (schema/linking/CRUD for uploads, basic CLI entry, linking `source_upload_id`, basic integration checks) have been removed here.
+
+* [ ] **Backend: Import Orchestrator (behavioral specifics)**
+
+  * Process only `.docx` files matching `YYYY_CW##_{DEV|EPC|FINANCE|INVESTMENT}.docx`.
+
+* [ ] **Backend: Project Mapping**
+
+  * Establish source of truth for `project_name → project_code` (CSV seed or DB table); load and cache.
+  * Tests: exact/normalized matching; flag unresolved projects.
+
+* [ ] **Backend: Content Parser (python-docx)**
+
+  * Detect project sections (headings/colon patterns, capacity like “MW”), aggregate bullets into a normalized summary.
+  * Extract fields: `title` (project name) and `summary`; set `entry_type="Report"`.
+
+* [ ] **Backend: CW/Date Logic**
+
+  * Derive `cw_label` from filename; compute ISO week **Monday** as `log_date`.
+  * Unit tests for week/date computation (include year boundaries).
+
+* [ ] **Backend: UPSERT to `project_history`**
+
+  * Key: `(project_code, log_date)` (with `entry_type='Report'` in this phase).
+  * Update fields: `summary/title/attachment_url/updated_at/updated_by`.
+  * Idempotency via content hash (normalized row hash) — skip updates if unchanged.
+
+* [ ] **Backend: Attachment Archive**
+
+  * Save original `.docx` to `REPORT_UPLOAD_ARCHIVE_DIR/{year}/{cw}/{category}/...`.
+  * Store a public/serveable `attachment_url` in `project_history`.
+
+* [ ] **Backend: Run Logging**
+
+  * Optional `import_runs` record: counts (processed/created/updated/skipped), errors, source path.
+
+* [ ] **Tests (TDD)**
+
+  * Unit: filename parsing, project mapping, minimal parser samples, ISO-week Monday date logic.
+
+**Acceptance for Phase 2B+:**
+
+* Only matching `.docx` files are processed; unresolved projects are flagged without crashes.
+* New/updated `project_history` rows have correct `(project_code, log_date, cw_label, category, summary)`.
+* UPSERT is idempotent via content hash (re-imports don’t create changes when content is unchanged).
+* Attachments are archived to the expected path and URLs stored.
+
+---
+
 ### P0 Phase 2C — Weekly Reports Editor (Cards) MVP
 Goal: Create/save weekly reports via cards with correct CW logic.
 - [ ] Backend: Weekly Reports APIs
@@ -328,7 +406,32 @@ CREATE TABLE project_history (
   created_by VARCHAR(255) NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_by VARCHAR(255) NOT NULL,
+  source_upload_id UUID REFERENCES report_uploads(id) ON DELETE SET NULL,
   UNIQUE(project_code, log_date)
+);
+```
+
+- Report Uploads
+```sql
+CREATE TABLE report_uploads (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  original_filename VARCHAR(512) NOT NULL,
+  storage_path VARCHAR(1024) NOT NULL, -- currently local path
+  mime_type VARCHAR(128) NOT NULL,
+  file_size_bytes BIGINT NOT NULL,
+  sha256 CHAR(64) NOT NULL UNIQUE, 
+  status VARCHAR(16) NOT NULL CHECK (status IN ('received','parsed','failed','partial')),
+  uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  parsed_at TIMESTAMPTZ,
+
+  cw_label VARCHAR(8),
+  doc_date DATE,
+  notes TEXT,
+
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_by VARCHAR(255) NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_by VARCHAR(255) NOT NULL
 );
 ```
 
@@ -427,13 +530,3 @@ scripts\start.bat       # Start all services
 - Timezone: all timestamps in UTC; clients must not send server timestamps.
 - `project_code` is the business key; CRUD operations should prefer it over UUIDs.
 - Early integration avoids large refactors later; keep UI changes minimal while swapping data sources.
-
----
-
-## F) Milestones (Target)
-- Phase 1 complete — Service layer wired with mock: T+1 day
-- Phase 2 complete — Backend CRUD live: T+3 days
-- Phase 3 complete — FE uses real API for projects: T+4 days
-- Phase 4 complete — History read + upload validation: T+6 days
-- Phase 5 complete — DX & Compose: T+7 days
-- ✅ Deployment automation complete — Cross-platform scripts ready: T+0 days
