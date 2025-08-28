@@ -30,3 +30,26 @@ def test_weekly_report_analysis_language_default_and_enum():
 
     with pytest.raises(Exception):
         WeeklyReportAnalysisCreate(project_code="P1", cw_label="CW02", language="ZZ")
+
+
+def test_project_history_schema_accepts_source_upload_id_optional():
+    from app.schemas.project_history import ProjectHistoryCreate
+
+    # should accept None by default
+    ProjectHistoryCreate(
+        project_code="P1",
+        entry_type="Report",
+        log_date="2025-01-06",
+        summary="ok",
+        category="EPC",
+    )
+
+    # and accept a UUID-like string value (we keep it as str in schema)
+    ProjectHistoryCreate(
+        project_code="P1",
+        entry_type="Report",
+        log_date="2025-01-13",
+        summary="ok",
+        category="EPC",
+        source_upload_id="00000000-0000-0000-0000-000000000000",
+    )
