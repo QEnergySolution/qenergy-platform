@@ -107,7 +107,7 @@ export function ReportUpload() {
     return Math.min(weekNumber, 52) // Cap at 52 weeks
   }
 
-  const getWeeksForYear = (year: number) => {
+  const getWeeksForYear = (_year: number) => {
     const weeks = []
     for (let i = 1; i <= 52; i++) {
       weeks.push(`CW${i.toString().padStart(2, "0")}`)
@@ -450,7 +450,7 @@ export function ReportUpload() {
                 <input
                   type="file"
                   accept=".docx"
-                  // @ts-ignore - webkitdirectory is non-standard but widely supported
+                  // @ts-expect-error - webkitdirectory is not in the standard HTML input attributes
                   webkitdirectory="true"
                   multiple
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"

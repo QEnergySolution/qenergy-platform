@@ -63,6 +63,9 @@ export const translations = {
     uploading: "Uploading...",
     selectReportPeriod: "Select Report Period",
     reportList: "Report List",
+    chooseFolder: "Choose Folder",
+    noFilesSelected: "No files selected",
+    uploadFolder: "Upload Folder",
 
     // Authorization
     authorizationTitle: "Authorization Management",
@@ -206,6 +209,9 @@ export const translations = {
     uploading: "Téléchargement...",
     selectReportPeriod: "Sélectionner Période de Rapport",
     reportList: "Liste des Rapports",
+    chooseFolder: "Choisir Dossier",
+    noFilesSelected: "Aucun fichier sélectionné",
+    uploadFolder: "Télécharger Dossier",
 
     // Authorization
     authorizationTitle: "Gestion des Autorisations",
@@ -351,6 +357,9 @@ export const translations = {
     uploading: "Hochladen...",
     selectReportPeriod: "Berichtszeitraum Auswählen",
     reportList: "Berichtsliste",
+    chooseFolder: "Ordner Auswählen",
+    noFilesSelected: "Keine Dateien ausgewählt",
+    uploadFolder: "Ordner Hochladen",
 
     // Authorization
     authorizationTitle: "Autorisierungsverwaltung",
@@ -496,6 +505,9 @@ export const translations = {
     uploading: "Subiendo...",
     selectReportPeriod: "Seleccionar Período de Informe",
     reportList: "Lista de Informes",
+    chooseFolder: "Elegir Carpeta",
+    noFilesSelected: "No hay archivos seleccionados",
+    uploadFolder: "Subir Carpeta",
 
     // Authorization
     authorizationTitle: "Gestión de Autorizaciones",
@@ -642,6 +654,9 @@ export const translations = {
     uploading: "Fazendo upload...",
     selectReportPeriod: "Selecionar Período do Relatório",
     reportList: "Lista de Relatórios",
+    chooseFolder: "Escolher Pasta",
+    noFilesSelected: "Nenhum arquivo selecionado",
+    uploadFolder: "Upload Pasta",
 
     // Authorization
     authorizationTitle: "Gestão de Autorizações",
@@ -787,6 +802,9 @@ export const translations = {
     uploading: "업로드 중...",
     selectReportPeriod: "리포트 기간 선택",
     reportList: "리포트 목록",
+    chooseFolder: "폴더 선택",
+    noFilesSelected: "선택된 파일 없음",
+    uploadFolder: "폴더 업로드",
 
     // Authorization
     authorizationTitle: "권한 관리",

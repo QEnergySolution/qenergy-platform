@@ -64,7 +64,6 @@ export default [
       '@typescript-eslint/require-await': 'off',
       '@typescript-eslint/restrict-template-expressions': 'off',
 
-      // You can add Next-specific rules if you like:
       // '@next/next/no-img-element': 'warn',
     },
   },

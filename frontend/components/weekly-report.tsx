@@ -171,7 +171,7 @@ export function WeeklyReport() {
   const handleAskAI = () => {
     if (!aiQuestion.trim()) return
     console.log("Asking AI:", aiQuestion)
-    // Here you would implement the actual AI query
+    // TODO: Implement actual AI query
     setAiQuestion("")
   }
 
