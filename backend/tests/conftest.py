@@ -16,6 +16,13 @@ BACKEND_ROOT = str(Path(__file__).resolve().parents[1])
 if BACKEND_ROOT not in sys.path:
     sys.path.insert(0, BACKEND_ROOT)
 
+# Load backend/.env so DATABASE_URL and other keys are available for tests
+try:
+    from dotenv import load_dotenv
+    load_dotenv(str(Path(BACKEND_ROOT) / ".env"), override=True)
+except Exception:
+    pass
+
 
 @contextmanager
 def _temp_db(base_url: str):

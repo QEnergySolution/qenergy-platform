@@ -61,3 +61,37 @@ frontend/node_modules
 test.py
 Weekly-analyzer/
 uploads/
+
+# Company/project specific documents
+latex/
+*.docx
+
+# Allow necessary project assets but exclude company-specific ones
+*.pdf
+!frontend/public/**
+!backend/setup-database.sql
+
+# Company logos and sensitive images
+*qenergy*
+*QEnergy*
+!frontend/public/placeholder*
+
+# Database and backups (exclude setup scripts)
+*.db
+*.sqlite
+*.sqlite3
+backup/
+backups/
+*.backup
+*dump.sql
+*backup.sql
+
+# Configuration and credentials
+config/
+configs/
+secrets/
+*.key
+*.pem
+*.crt
+*.cert
+credentials/

@@ -87,124 +87,70 @@ Acceptance for Phase 2A:
 
 ---
 
-### P0 Phase 2B — Report Upload Popup (Parse & Apply) — ✅ COMPLETED 2025-08-26
-Goal: Upload files to auto-fill report cards without immediate persistence.
-- [x] Backend: Report Upload — 2025-08-26
-  - `POST /api/reports/upload` accepts docx/pdf/txt/md; parse and return structured rows
-  - Constraints: type whitelist, size limits, standardized error schema
-  - DOCX parser extracts paragraphs and tables (not just paragraphs)
-  - Storage: local temp; cleanup policy; plan for S3/MinIO later
-- [x] Backend: Bulk Folder Upload (Category-separated files only) — 2025-08-26
-  - `POST /api/reports/upload/bulk` accepts multiple files in one request
-  - Constraints: docx only (for now), per-file size limit, total files limit, standardized per-file result/errors
-  - Filename parser for pattern: `YYYY_CW##_{DEV|EPC|FINANCE|INVESTMENT}.docx`
-    - Mapping: DEV→Development, EPC→EPC, FINANCE→Finance, INVESTMENT→Investment
-    - Extract `year`, `cw_label` (e.g., CW01), and `category`; ignore non-conforming names
-  - DOCX parser supports paragraphs and tables; unify to rows shape
-  - Temp storage & cleanup (TTL) for uploaded files
-- [x] Frontend: Upload Popup — 2025-08-26
-  - Drag & drop; show detected rows; apply-to-cards (not persisted)
-  - Unmatched items flagged for manual review
-  - Service layer wiring + tests
-- [x] Frontend: Bulk Folder Picker & Preview — 2025-08-26
-  - Folder selection (webkitdirectory); filter and preview only matching files
-  - Show per-file parsed rows and errors; allow apply-to-cards by file/category
-  - Service: bulk upload function; error handling and tests
+### P0 Phase 2B — Report Upload & Import (Upload → LLM Parse → Apply → DB)
 
-Acceptance for Phase 2B:
-- Supported files parse into structured data; apply-to-cards works; errors clear
-- Bulk folder import: matching files parsed; invalid names/types reported per-file
-- No DB writes until user clicks Save in cards editor
+- Goal: Support file upload → parsing preview → manual apply-to-cards → persistence to DB, with full traceability (`source_upload_id`).
 
----
+#### 2B1 - Upload & Preview (✅ Completed 2025-08-26)
+- [x] Backend: single-file upload `POST /api/reports/upload` (docx/pdf/txt/md; type whitelist, size limit, unified error schema; local temp storage+cleanup; DOCX parser for paragraphs+tables → rows)
+- [x] Backend: bulk upload `POST /api/reports/upload/bulk` (docx-only; filename pattern `YYYY_CW##_{DEV|EPC|FINANCE|INVESTMENT}.docx` → year/cw/category mapping; per-file results/errors; TTL cleanup)
+- [x] Frontend: upload popup (drag & drop, show parsed rows, apply-to-cards without persistence; unmatched items flagged)
+- [x] Frontend: bulk folder picker (webkitdirectory filter+preview; per-file parsed rows/errors; apply-to-cards per file/category; service layer + tests)
+- Acceptance:
+  - [x] Files parsed into structured rows; apply-to-cards works; errors clear
+  - [x] Bulk import: non-matching names/types flagged per file
+  - [x] No DB writes until Save is clicked in cards editor
 
-### P0 Phase 2B- — Report Importer (Schema Modification)
+#### 2B2 - DB Schema & Linking (✅ Completed)
+- [x] Database: add `report_uploads`; add `project_history.source_upload_id UUID REFERENCES report_uploads(id) ON DELETE SET NULL`; index `idx_project_history_source_upload_id`
+- [x] Migration scripts: backward-compatible with rollback
+- [x] Domain/DAO: `ReportUploads` repo (`create`/`get_by_sha256`/`mark_parsed`); insert `source_upload_id` when creating `ProjectHistory`
 
-* [x] **Database:** Create `report_uploads` table; add column `project_history.source_upload_id UUID REFERENCES report_uploads(id) ON DELETE SET NULL`; add index `idx_project_history_source_upload_id`.
-* [x] **Migration scripts:** Backward-compatible migration (no data loss) and rollback scripts.
-* [x] **Domain/DAO:** Add ReportUploads repository (`create`, `get_by_sha256`, `mark_parsed`); support writing `source_upload_id` when inserting `ProjectHistory`.
-* [ ] **Upload entry (CLI/backend):**
+#### 2B3 - Importer Entrypoint (CLI/Backend)
+- [x] Support single `.docx` upload (iterate until `uploads/2025_CW01_DEV.docx` passes)
+- [x] Support folder recursive upload (iterate until `./uploads` passes)
+- [x] Compute `sha256` for deduplication (reuse existing `report_uploads` entry)
+- [ ] Final polish: CLI UX and logging details
 
-  * [x] Support uploading a single `.docx` file. (interate untill uploads/2025_CW01_DEV.docx pass)
-  * [x] Support uploading an entire folder (recursive scan of `uploads/`). (interate untill ./uploads pass)
-  * [x] Compute `sha256`; if duplicate, skip storing the file entity and reuse the existing `report_uploads` record.
-* [ ] **Parsing pipeline (docx → project\_history\[\*]):**
+#### 2B4 - LLM Parsing Pipeline (docx → project_history[*])
+- [x] Insert `report_uploads(status='received')` before parsing; each `project_history` row must set `source_upload_id`
+- [ ] On success update `status='parsed'`; on error `status='failed'` with `notes`
+- [x] Azure Chat Completions (HTTP); JSON retry/fallback; low temperature; optional `DRY_RUN`
+- [x] `python-docx` chunking (paragraphs+tables), token-safe; Pydantic `ParsedHistoryRow`
+- [ ] Aggregation: normalize names, group by project, merge fragments within same file
+- [ ] Idempotency: row-level hash, skip unchanged
+- [ ] `attachment_url`: set when archived file path is available
 
-  * [x] Before parsing, insert a `report_uploads(status='received')` row.
-  * [x] While generating each `project_history`, **must** set `source_upload_id=report_uploads.id`.
-  * [ ] On success set upload `status='parsed'`; on error set `status='failed'` and write `notes`.
+#### 2B5 - Token Limits & Reliability (✅ Completed)
+- [x] Safe truncation & token estimation; env vars:
+  - `AZURE_OPENAI_MAX_CONTEXT=8000` / `AZURE_OPENAI_MAX_INPUT=3500` / `AZURE_OPENAI_MAX_OUTPUT=4000` / `AZURE_OPENAI_SAFETY_BUFFER=500`
+- [x] Smart `max_tokens` allocation; truncated JSON recovery (strip ```json fences, parse incomplete arrays, regex fallback)
+- [x] Tests & docs: `backend/tests/test_token_limits.py`, `backend/Token_Limits_Configuration.md`
+- [x] Verified: 12,711 char doc → 27 rows extracted; log includes smart allocation
 
-* [ ] check commuting of frontend & backend
-* [ ] **Acceptance (TDD: tests first):**
+#### 2B6 - Single-File Import — Verification (E2E/Mock ✅)
+- [x] Rows persisted with correct `cw_label`/`category`/`source_upload_id`/`entry_type='Report'`
+- [ ] Idempotency check: re-run → no new rows or only updates when changed
+- - Precondition: `AZURE_OPENAI_E2E=1` + env set; input: `/Users/yuxin.xue/Projects/qenergy-platform/uploads/2025_CW01_DEV.docx`
+- - Assert: `report_uploads.status='parsed'`, `parsed_at` NOT NULL; ≥1 `project_history` row with correct ISO-week Monday `log_date` (e.g., 2025-01-06)
 
-  * [x] Unit: `report_uploads` create/deduplicate (`sha256` UNIQUE); state transitions (received→parsed/failed).
-  * [x] Unit: importing one docx yields N `project_history` rows; each has non-null `source_upload_id` and is back-referenceable.
-  * [x] Integration: bulk import a folder under `uploads/` with multiple files/projects/weeks; failed files marked `failed` without blocking others.
-  * [ ] Query cases: given a `report_uploads.id`, fetch all linked `project_history`; given a `project_history.id`, fetch its upload metadata.
-* [ ] **Docs:** Add an “Upload & Import” flow diagram to README, CLI examples, and error-handling notes.
+#### 2B7 - Folder → DB Orchestrator
+- [ ] Process only `.docx` matching filename pattern; archive to `REPORT_UPLOAD_ARCHIVE_DIR/{year}/{cw}/{category}/...`; set `attachment_url`
+- [ ] Project mapping: establish truth source (`project_name → project_code` via CSV/DB); load+cache; unresolved flagged
+- [ ] Content parser (non-LLM path): detect project sections (headings/colon patterns, MW capacity), aggregate bullets into normalized summary; set `entry_type="Report"`
+- [ ] CW/date logic: derive `cw_label` from filename; compute ISO-week Monday `log_date`
+- [ ] UPSERT key: `(project_code, log_date, entry_type='Report')`; idempotent via content hash
+- [ ] Run logging: record counts (processed/created/updated/skipped), errors, source path
 
----
+#### Tests & Acceptance
+- [x] Unit: `report_uploads` lifecycle + dedup; status transitions (received→parsed/failed)
+- [x] Unit: single docx import yields N `project_history` rows, each linked to `source_upload_id`
+- [x] Integration: bulk folder import marks failed files but doesn’t block others
+- [ ] Query: given `report_uploads.id`, fetch linked `project_history`; given `project_history.id`, fetch upload metadata
+- [ ] Edge cases: ISO-week year boundaries, mapping normalization, orchestrator unit tests
 
-### P0 Phase 2B+ - Backend Report Importer
-
-* [x] added source_text (TEXT, nullable) to project_history
-* [ ] LLM-based parsing with LangChain + Azure OpenAI
-  * Dependencies: add `langchain`, `langchain-openai` (Azure), pin versions
-  * Pydantic output schema `ParsedHistoryRow` (per project entry):
-    - `project_name: str`, `category: Literal('Development','EPC','Finance','Investment')|None`, `title: str|None`, `summary: str`, `next_actions: str|None`, `owner: str|None`, `source_text (TEXT, nullable)`
-  * Prompt: system (domain + output contract), user (chunk + filename meta: year/cw/category)
-  * Chain: Azure Chat model (endpoint/key/deployment/version), JSON structured output → list[`ParsedHistoryRow`]
-  * Chunking: `python-docx` → paragraphs + table cells; split by headings; token-safe chunks
-  * Aggregation: normalize names; group rows by project; merge fragments into a single row per project per file
-  * Mapping & enrichment (before DB write):
-    - Map `project_name → project_code` (stub/table); set `entry_type='Report'`
-    - Derive `cw_label` from filename; compute ISO Monday `log_date`
-    - Set `attachment_url` to archived file path when available
-  * Idempotency: file-level content hash; skip if unchanged
-  * Controls: low temperature, retries/backoff; optional DRY_RUN
-
-* [ ] Single-file import acceptance
-  * Input: `/Users/yuxin.xue/Projects/qenergy-platform/uploads/2025_CW01_DEV.docx`
-  * Output: rows persisted to `project_history` with correct `cw_label`/`category`/`source_upload_id`
-  * TDD: unit mock LLM → rows; integration (guarded by `AZURE_OPENAI_E2E=1`) real call returns rows
-
-
-### P0 Phase 2B++ — Report Importer (Folder → Database)
-
-**Goal:** Read .docx reports from a folder, parse project entries, and persist to DB.
-
-> **Note:** Items that duplicate Phase 2B- (schema/linking/CRUD for uploads, basic CLI entry, linking `source_upload_id`, basic integration checks) have been removed here.
-
-* [ ] **Backend: Import Orchestrator (behavioral specifics)**
-  * Process only `.docx` files matching `YYYY_CW##_{DEV|EPC|FINANCE|INVESTMENT}.docx`.
-* [ ] **Backend: Project Mapping**
-  * Establish source of truth for `project_name → project_code` (CSV seed or DB table); load and cache.
-  * Tests: exact/normalized matching; flag unresolved projects.
-* [ ] **Backend: Content Parser (python-docx)**
-  * Detect project sections (headings/colon patterns, capacity like “MW”), aggregate bullets into a normalized summary.
-  * Extract fields: `title` (project name) and `summary`; set `entry_type="Report"`.
-* [ ] **Backend: CW/Date Logic**
-  * Derive `cw_label` from filename; compute ISO week **Monday** as `log_date`.
-  * Unit tests for week/date computation (include year boundaries).
-* [ ] **Backend: UPSERT to `project_history`**
-  * Key: `(project_code, log_date)` (with `entry_type='Report'` in this phase).
-  * Update fields: `summary/title/attachment_url/updated_at/updated_by`.
-  * Idempotency via content hash (normalized row hash) — skip updates if unchanged.
-* [ ] **Backend: Attachment Archive**
-  * Save original `.docx` to `REPORT_UPLOAD_ARCHIVE_DIR/{year}/{cw}/{category}/...`.
-  * Store a public/serveable `attachment_url` in `project_history`.
-* [ ] **Backend: Run Logging**
-  * Optional `import_runs` record: counts (processed/created/updated/skipped), errors, source path.
-* [ ] **Tests (TDD)**
-  * Unit: filename parsing, project mapping, minimal parser samples, ISO-week Monday date logic.
-
-**Acceptance for Phase 2B+:**
-
-* Only matching `.docx` files are processed; unresolved projects are flagged without crashes.
-* New/updated `project_history` rows have correct `(project_code, log_date, cw_label, category, summary)`.
-* UPSERT is idempotent via content hash (re-imports don’t create changes when content is unchanged).
-* Attachments are archived to the expected path and URLs stored.
-* A single `.docx` yields multiple `project_history` rows (one per project found) and each full row is persisted with `entry_type/title/summary/next_actions/owner/category/cw_label/log_date/source_upload_id` filled where available.
+#### Documentation
+- [ ] README: add “Upload & Import” flow diagram, CLI examples, error-handling notes
 
 ---
 
