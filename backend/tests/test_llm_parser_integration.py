@@ -151,9 +151,10 @@ class TestLLMParserErrorHandling:
             pytest.skip("Valid DOCX file needed for this test")
 
         try:
-            # Act & Assert
-            with pytest.raises(RuntimeError, match="Azure OpenAI env vars missing"):
-                extract_rows_from_docx(valid_docx_path, "CW01", "Development")
+            # Act & Assert - Now expecting empty list instead of RuntimeError
+            # because extract_rows_from_docx handles errors gracefully
+            result = extract_rows_from_docx(valid_docx_path, "CW01", "Development")
+            assert result == []  # Should return empty list when Azure API fails
         finally:
             # Restore environment variables
             for var, value in original_env.items():

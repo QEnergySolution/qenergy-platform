@@ -18,8 +18,18 @@ export function useLanguage() {
     localStorage.setItem("qenergy-language", newLanguage)
   }
 
-  const t = (key: TranslationKey): string => {
-    return translations[language][key] || translations.en[key] || key
+  const t = (key: TranslationKey, params?: { count?: number; year?: string; week?: string }): string => {
+    const template = translations[language][key] || translations.en[key] || key
+    
+    // Handle template string interpolation for showingReports
+    if (key === "showingReports" && params) {
+      return template
+        .replace("{{count}}", String(params.count || 0))
+        .replace("{{year}}", String(params.year || ""))
+        .replace("{{week}}", String(params.week || ""))
+    }
+    
+    return template
   }
 
   return { language, changeLanguage, t }

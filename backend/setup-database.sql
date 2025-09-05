@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS project_history (
     created_by VARCHAR(255) NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_by VARCHAR(255) NOT NULL,
-    UNIQUE(project_code, log_date)
+    UNIQUE(project_code, log_date, category)
 );
 
 -- Create weekly_report_analysis table

@@ -65,15 +65,19 @@ def test_migrations_apply_and_schema_constraints():
             except Exception:
                 conn.rollback()
 
-            # project_history unique (project_code, log_date) and CHECK on entry_type
-            conn.execute(text("INSERT INTO project_history (project_code, entry_type, log_date, summary, created_by, updated_by) VALUES ('P001','Report','2025-01-06','ok','sys','sys')"))
+            # project_history unique (project_code, log_date, category) and CHECK on entry_type
+            conn.execute(text("INSERT INTO project_history (project_code, entry_type, log_date, category, summary, created_by, updated_by) VALUES ('P001','Report','2025-01-06','Development','ok','sys','sys')"))
             conn.commit()
             try:
-                conn.execute(text("INSERT INTO project_history (project_code, entry_type, log_date, summary, created_by, updated_by) VALUES ('P001','Report','2025-01-06','dup','sys','sys')"))
+                conn.execute(text("INSERT INTO project_history (project_code, entry_type, log_date, category, summary, created_by, updated_by) VALUES ('P001','Report','2025-01-06','Development','dup','sys','sys')"))
                 conn.commit()
-                assert False, "should violate unique(project_code, log_date)"
+                assert False, "should violate unique(project_code, log_date, category)"
             except Exception:
                 conn.rollback()
+            
+            # But different categories should be allowed
+            conn.execute(text("INSERT INTO project_history (project_code, entry_type, log_date, category, summary, created_by, updated_by) VALUES ('P001','Report','2025-01-06','EPC','different category ok','sys','sys')"))
+            conn.commit()
             try:
                 conn.execute(text("INSERT INTO project_history (project_code, entry_type, log_date, summary, created_by, updated_by) VALUES ('P001','NotValid','2025-01-13','bad','sys','sys')"))
                 conn.commit()

@@ -121,33 +121,40 @@ Acceptance for Phase 2A:
 - [ ] Idempotency: row-level hash, skip unchanged
 - [ ] `attachment_url`: set when archived file path is available
 
-#### 2B5 - Token Limits & Reliability (✅ Completed)
+#### 2B5 - Token Limits & Reliability (✅ Completed 2025-08-29)
 - [x] Safe truncation & token estimation; env vars:
   - `AZURE_OPENAI_MAX_CONTEXT=8000` / `AZURE_OPENAI_MAX_INPUT=3500` / `AZURE_OPENAI_MAX_OUTPUT=4000` / `AZURE_OPENAI_SAFETY_BUFFER=500`
 - [x] Smart `max_tokens` allocation; truncated JSON recovery (strip ```json fences, parse incomplete arrays, regex fallback)
 - [x] Tests & docs: `backend/tests/test_token_limits.py`, `backend/Token_Limits_Configuration.md`
 - [x] Verified: 12,711 char doc → 27 rows extracted; log includes smart allocation
 
-#### 2B6 - Single-File Import — Verification (E2E/Mock ✅)
-- [x] Rows persisted with correct `cw_label`/`category`/`source_upload_id`/`entry_type='Report'`
-- [ ] Idempotency check: re-run → no new rows or only updates when changed
-- - Precondition: `AZURE_OPENAI_E2E=1` + env set; input: `/Users/yuxin.xue/Projects/qenergy-platform/uploads/2025_CW01_DEV.docx`
-- - Assert: `report_uploads.status='parsed'`, `parsed_at` NOT NULL; ≥1 `project_history` row with correct ISO-week Monday `log_date` (e.g., 2025-01-06)
-
 #### 2B7 - Folder → DB Orchestrator
 - [ ] Process only `.docx` matching filename pattern; archive to `REPORT_UPLOAD_ARCHIVE_DIR/{year}/{cw}/{category}/...`; set `attachment_url`
-- [ ] Project mapping: establish truth source (`project_name → project_code` via CSV/DB); load+cache; unresolved flagged
+- [x] Project mapping: establish truth source (`project_name → project_code` via CSV/DB); load+cache; unresolved flagged — 2025-08-29
+  - Implemented CSV-backed loader `backend/app/utils.py:get_project_code_by_name`
+  - Replaced keyword mapper in `backend/app/main.py` with CSV mapper
+  - Importer now skips rows when mapping is missing (warns)
 - [ ] Content parser (non-LLM path): detect project sections (headings/colon patterns, MW capacity), aggregate bullets into normalized summary; set `entry_type="Report"`
 - [ ] CW/date logic: derive `cw_label` from filename; compute ISO-week Monday `log_date`
 - [ ] UPSERT key: `(project_code, log_date, entry_type='Report')`; idempotent via content hash
 - [ ] Run logging: record counts (processed/created/updated/skipped), errors, source path
 
 #### Tests & Acceptance
+- [x] Frontend: Commuting + Task Status + queue (TODO)
 - [x] Unit: `report_uploads` lifecycle + dedup; status transitions (received→parsed/failed)
 - [x] Unit: single docx import yields N `project_history` rows, each linked to `source_upload_id`
 - [x] Integration: bulk folder import marks failed files but doesn’t block others
 - [ ] Query: given `report_uploads.id`, fetch linked `project_history`; given `project_history.id`, fetch upload metadata
 - [ ] Edge cases: ISO-week year boundaries, mapping normalization, orchestrator unit tests
+- [x] Single-File Import — Verification (E2E/Mock ✅ 2025-08-29)
+  - [x] Rows persisted with correct `cw_label`/`category`/`source_upload_id`/`entry_type='Report'`
+  - [ ] Idempotency check: re-run → no new rows or only updates when changed
+  - Precondition: `AZURE_OPENAI_E2E=1` + env set; input: `/Users/yuxin.xue/Projects/qenergy-platform/uploads/2025_CW01_DEV.docx`
+  - Assert: `report_uploads.status='parsed'`, `parsed_at` NOT NULL; ≥1 `project_history` row with correct ISO-week Monday `log_date` (e.g., 2025-01-06)
+
+#### Prompt / Output Control
+- [x] Enforce strict JSON formatting in the prompt, or use Azure’s response_format={"type": "json_object"} if supported.
+- [x] Move the schema definition out of the system prompt and enforce it separately with a Pydantic model for strict validation, eliminating the need for fragile regex-based post-processing.
 
 #### Documentation
 - [ ] README: add “Upload & Import” flow diagram, CLI examples, error-handling notes

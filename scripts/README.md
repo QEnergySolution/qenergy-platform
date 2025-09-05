@@ -13,6 +13,13 @@ This directory contains deployment and management scripts for the QEnergy Platfo
 - **`start.bat`** - Start all services (Windows)
 - **`test.sh`** - Comprehensive health check and testing
 - **`demo.sh`** - Platform demonstration and feature showcase
+- **`health-check.sh`** - Quick system health check (macOS/Linux)
+- **`health-check.py`** - Cross-platform system health check (Python)
+- **`clean-database.sh`** - Database cleanup utility with backup
+
+### Database Inspection Scripts
+- **`check-database.py`** - Comprehensive database inspection tool
+- **`db-check.sh`** - Quick database check wrapper script
 
 ## 🚀 Quick Start
 
@@ -139,6 +146,64 @@ scripts\install.bat
 ```bash
 ./scripts/demo.sh
 ```
+
+#### `health-check.sh` (macOS/Linux)
+**Features:**
+- Quick system health assessment
+- Frontend, backend, and database connectivity tests
+- API endpoint validation
+- Environment configuration checks
+- Database statistics and recent activity
+- Color-coded status indicators
+- Performance recommendations
+- Quick access URLs
+
+**Usage:**
+```bash
+./scripts/health-check.sh
+```
+
+#### `health-check.py` (Cross-platform)
+**Features:**
+- Python-based health check (works on Windows/macOS/Linux)
+- Same functionality as bash version
+- No shell dependencies
+- Detailed error reporting
+- JSON-compatible output option
+
+**Usage:**
+```bash
+# With conda environment
+conda activate qenergy-backend
+python scripts/health-check.py
+
+# Or direct Python
+python3 scripts/health-check.py
+```
+
+#### `clean-database.sh`
+**Features:**
+- Safe database cleanup with automatic backup
+- Multiple cleanup options:
+  - Full cleanup (all data)
+  - Reports only (uploads + history)
+  - Analysis only (weekly reports)
+  - Custom table selection
+- Automatic backup creation before cleanup
+- Backup restoration instructions
+- Safety confirmations and warnings
+
+**Usage:**
+```bash
+./scripts/clean-database.sh
+```
+
+**Cleanup Options:**
+1. **Full cleanup** - Removes all data except projects table
+2. **Reports only** - Cleans report_uploads and project_history
+3. **Analysis only** - Cleans weekly_report_analysis
+4. **Custom** - Choose specific tables to clean
+5. **Backup only** - Create backup without cleanup
 
 ## 🔧 Prerequisites
 
@@ -269,6 +334,75 @@ If you encounter issues:
 2. Run `./scripts/test.sh` for detailed diagnostics
 3. Check the main project README.md
 4. Review service logs for error messages
+
+---
+
+## 📊 Database Inspection Tools
+
+### check-database.py
+
+Comprehensive database inspection tool with multiple viewing options:
+
+**Basic Usage:**
+```bash
+# Quick database overview
+python scripts/check-database.py summary
+
+# List projects (with filtering)
+python scripts/check-database.py projects --limit 20
+python scripts/check-database.py projects --status 1  # Active projects only
+
+# View project history
+python scripts/check-database.py history --limit 10
+
+# Check uploaded reports
+python scripts/check-database.py uploads
+
+# Recent activity (last 7 days)
+python scripts/check-database.py recent --days 7
+
+# Detailed project information
+python scripts/check-database.py project 2ES00069
+
+# Search across projects and history
+python scripts/check-database.py search "Carmona"
+python scripts/check-database.py search "Taurus"
+```
+
+**Example Output:**
+```
+📊 QEnergy Platform Database Summary
+====================================
+📁 Total Projects: 107
+📋 Project History Records: 20
+📄 Report Uploads: 1
+
+🟢 Active Projects: 107  🔴 Inactive Projects: 0
+🏢 Real Projects: 95     🤖 Virtual Projects: 12
+```
+
+### db-check.sh
+
+Quick wrapper script for common database checks:
+
+```bash
+# Quick summary (default)
+./scripts/db-check.sh
+
+# Other commands with simpler syntax
+./scripts/db-check.sh projects
+./scripts/db-check.sh history
+./scripts/db-check.sh search "project name"
+```
+
+**Key Features:**
+- 📊 Database overview with counts and statistics
+- 🏢 Project listings with status and type indicators  
+- 📋 Project history with creation dates and summaries
+- 📄 Report upload tracking
+- 🔍 Powerful search across all data
+- 📈 Recent activity monitoring
+- 🤖 Virtual vs Real project identification
 
 ---
 

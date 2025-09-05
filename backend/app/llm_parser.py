@@ -1,4 +1,4 @@
-from typing import List, Dict, Optional
+from typing import List, Dict
 import os
 import json
 import re
@@ -8,7 +8,7 @@ import httpx
 from docx import Document
 from pydantic import ValidationError
 
-from .schemas import ExtractionResponse, ProjectEntry, SYSTEM_PROMPT_V2, EXTRACTION_FUNCTION_SCHEMA
+from .schemas.llm_extraction import ExtractionResponse, ProjectEntry, SYSTEM_PROMPT_V2, EXTRACTION_FUNCTION_SCHEMA
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -59,9 +59,6 @@ def _safe_truncate_text(text: str, max_tokens: int = None) -> str:
     return truncated
 
 
-# System prompt is imported from schemas.py
-
-
 def _clean_text(s: str) -> str:
     s = s.replace("\r", "\n")
     s = re.sub(r"\n+", "\n", s)
@@ -81,7 +78,7 @@ def _load_doc_text(file_path: str) -> str:
             cells = [c for c in cells if c]
             if cells:
                 parts.append(" | ".join(cells))
-    return _clean_text("\n".join(parts))
+    return _clean_text("\n".join(parts).lower())
 
 
 def _azure_chat_completion(
@@ -122,10 +119,12 @@ def _azure_chat_completion(
     if use_json_mode and not use_function_calling:
         # For models that support response_format
         payload["response_format"] = {"type": "json_object"}
+        logger.debug("Using JSON response format enforcement")
     elif use_function_calling:
         # Alternative: Use function calling for strict schema enforcement
         payload["functions"] = [EXTRACTION_FUNCTION_SCHEMA]
         payload["function_call"] = {"name": "extract_project_entries"}
+        logger.debug("Using function calling for schema enforcement")
     
     with httpx.Client(timeout=60) as client:
         resp = client.post(url, headers=headers, json=payload)
@@ -195,46 +194,27 @@ Return valid JSON only with the exact structure specified in the system prompt."
                 # Regular chat completion
                 content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
             
-            # Clean up any remaining markdown artifacts (though should be minimal with JSON mode)
-            content = re.sub(r"```json\s*", "", content)
-            content = re.sub(r"\s*```", "", content)
-            content = content.strip()
-            
-            # Parse and validate with Pydantic
+            # Try to parse and validate with Pydantic
             try:
-                # Try direct parsing first
-                parsed_data = json.loads(content)
+                # Clean up potential markdown formatting
+                content = re.sub(r"```json\s*", "", content)
+                content = re.sub(r"\s*```", "", content)
+                content = content.strip()
                 
-                # Handle both new format {"rows": [...]} and legacy format [...]
-                if isinstance(parsed_data, list):
-                    # Legacy format: direct array of entries
-                    # Filter out invalid entries before validation
-                    valid_entries = [entry for entry in parsed_data if isinstance(entry, dict)]
-                    parsed_data = {"rows": valid_entries}
-                elif isinstance(parsed_data, dict) and "rows" not in parsed_data:
-                    # Invalid format
-                    raise ValueError("Expected 'rows' key in response object")
-                elif isinstance(parsed_data, dict) and "rows" in parsed_data:
-                    # Filter out invalid entries from rows array
-                    if isinstance(parsed_data["rows"], list):
-                        parsed_data["rows"] = [entry for entry in parsed_data["rows"] if isinstance(entry, dict)]
+                # Parse JSON
+                raw_data = json.loads(content)
                 
-                # Validate with Pydantic schema - use individual validation to filter invalid entries
-                valid_entries = []
-                for entry_data in parsed_data.get("rows", []):
-                    try:
-                        entry = ProjectEntry(**entry_data)
-                        valid_entries.append(entry)
-                    except ValidationError as ve:
-                        logger.debug(f"Skipping invalid entry: {entry_data}, error: {ve}")
-                        continue
+                # Handle both array and object formats
+                if isinstance(raw_data, list):
+                    # Direct array format (for backward compatibility)
+                    raw_data = {"rows": raw_data}
                 
-                # Create response with valid entries only
-                validated_response = ExtractionResponse(rows=valid_entries)
+                # Validate with Pydantic
+                response = ExtractionResponse(**raw_data)
                 
-                # Convert to legacy format for backward compatibility
+                # Convert to legacy format for compatibility
                 result = []
-                for entry in validated_response.rows:
+                for entry in response.rows:
                     result.append({
                         "project_name": entry.project_name,
                         "title": entry.title,
@@ -245,46 +225,65 @@ Return valid JSON only with the exact structure specified in the system prompt."
                         "source_text": entry.source_text,
                     })
                 
-                logger.info(f"Successfully extracted {len(result)} project entries")
+                logger.info(f"Successfully extracted {len(result)} entries using strategy {attempt}")
                 return result
                 
-            except (json.JSONDecodeError, ValidationError, ValueError) as e:
-                logger.warning(f"Attempt {attempt} failed: {type(e).__name__}: {e}")
+            except (json.JSONDecodeError, ValidationError) as e:
+                logger.warning(f"Parsing/validation failed for attempt {attempt}: {e}")
                 
-                # Try regex fallback for malformed JSON (only on last attempt)
-                if attempt == len(strategies) and isinstance(e, json.JSONDecodeError):
-                    logger.info("Attempting regex fallback for malformed JSON")
+                # Try manual data cleaning for validation errors
+                if isinstance(e, ValidationError) and attempt < len(strategies):
                     try:
-                        # Look for JSON array pattern
-                        array_match = re.search(r'\[.*?\]', content, re.DOTALL)
-                        if array_match:
-                            array_content = array_match.group(0)
-                            fallback_data = json.loads(array_content)
-                            if isinstance(fallback_data, list):
-                                # Filter and validate entries
-                                valid_entries = []
-                                for entry_data in fallback_data:
-                                    if isinstance(entry_data, dict):
-                                        try:
-                                            entry = ProjectEntry(**entry_data)
-                                            valid_entries.append(entry)
-                                        except ValidationError:
-                                            continue
-                                
-                                if valid_entries:
-                                    result = []
-                                    for entry in valid_entries:
-                                        result.append({
-                                            "project_name": entry.project_name,
-                                            "title": entry.title,
-                                            "summary": entry.summary,
-                                            "next_actions": entry.next_actions,
-                                            "owner": entry.owner,
-                                            "category": entry.category.value if entry.category else None,
-                                            "source_text": entry.source_text,
-                                        })
-                                    logger.info(f"Regex fallback succeeded: {len(result)} entries")
-                                    return result
+                        # Try to clean the data before validation
+                        cleaned_data = _clean_raw_data_for_validation(raw_data)
+                        if cleaned_data:
+                            response = ExtractionResponse(**cleaned_data)
+                            result = []
+                            for entry in response.rows:
+                                result.append({
+                                    "project_name": entry.project_name,
+                                    "title": entry.title,
+                                    "summary": entry.summary,
+                                    "next_actions": entry.next_actions,
+                                    "owner": entry.owner,
+                                    "category": entry.category.value if entry.category else None,
+                                    "source_text": entry.source_text,
+                                })
+                            logger.info(f"Data cleaning succeeded: {len(result)} entries")
+                            return result
+                    except Exception as clean_error:
+                        logger.debug(f"Data cleaning failed: {clean_error}")
+                
+                # Fallback: Try regex extraction for truncated or malformed responses
+                if attempt == len(strategies):
+                    try:
+                        # First try to extract array from malformed content
+                        entries = _extract_array_from_malformed_content(content)
+                        if not entries:
+                            # Then try complete entries from potentially truncated JSON
+                            entries = _extract_complete_entries_from_partial_json(content)
+                        
+                        if entries:
+                            # Validate each entry individually
+                            result = []
+                            for entry_data in entries:
+                                try:
+                                    entry = ProjectEntry(**entry_data)
+                                    result.append({
+                                        "project_name": entry.project_name,
+                                        "title": entry.title,
+                                        "summary": entry.summary,
+                                        "next_actions": entry.next_actions,
+                                        "owner": entry.owner,
+                                        "category": entry.category.value if entry.category else None,
+                                        "source_text": entry.source_text,
+                                    })
+                                except ValidationError:
+                                    # Skip invalid entries
+                                    continue
+                            if result:
+                                logger.info(f"Regex fallback succeeded: {len(result)} entries")
+                                return result
                     except Exception as fallback_error:
                         logger.debug(f"Regex fallback failed: {fallback_error}")
                 
@@ -304,4 +303,78 @@ Return valid JSON only with the exact structure specified in the system prompt."
     return []
 
 
+def _clean_raw_data_for_validation(raw_data: Dict) -> Dict:
+    """Clean raw data to make it compatible with Pydantic validation"""
+    try:
+        if isinstance(raw_data, list):
+            raw_data = {"rows": raw_data}
+        
+        if "rows" in raw_data and isinstance(raw_data["rows"], list):
+            cleaned_rows = []
+            for item in raw_data["rows"]:
+                # Only keep dictionary items that look like valid entries
+                if isinstance(item, dict) and "project_name" in item:
+                    cleaned_rows.append(item)
+            
+            if cleaned_rows:
+                return {"rows": cleaned_rows}
+    except Exception:
+        pass
+    
+    return {}
 
+
+def _extract_array_from_malformed_content(content: str) -> List[Dict]:
+    """Extract JSON array from content that may have text before/after"""
+    try:
+        # Look for JSON array pattern
+        array_match = re.search(r'\[.*?\]', content, re.S)
+        if array_match:
+            array_content = array_match.group(0)
+            parsed = json.loads(array_content)
+            if isinstance(parsed, list):
+                return [item for item in parsed if isinstance(item, dict)]
+    except Exception:
+        pass
+    
+    return []
+
+
+def _extract_complete_entries_from_partial_json(content: str) -> List[Dict]:
+    """Extract complete JSON entries from potentially truncated response"""
+    try:
+        # Look for "rows": [ pattern and try to extract complete entries
+        rows_match = re.search(r'"rows"\s*:\s*\[(.*)', content, re.S)
+        if rows_match:
+            rows_content = rows_match.group(1)
+            
+            # Try to extract complete JSON objects until we hit truncation
+            complete_entries = []
+            # Split by }, { pattern to get individual entries
+            entries = re.split(r'\}\s*,\s*\{', rows_content)
+            
+            for i, entry in enumerate(entries):
+                # Add back the braces that were split
+                if i == 0:
+                    entry_json = "{" + entry
+                elif i == len(entries) - 1:
+                    entry_json = "{" + entry
+                else:
+                    entry_json = "{" + entry + "}"
+                
+                # Ensure the entry ends properly
+                if not entry_json.rstrip().endswith('}'):
+                    continue  # Skip incomplete entries
+                
+                try:
+                    parsed_entry = json.loads(entry_json)
+                    complete_entries.append(parsed_entry)
+                except json.JSONDecodeError:
+                    # Skip malformed entries
+                    continue
+            
+            return complete_entries
+    except Exception:
+        pass
+    
+    return []

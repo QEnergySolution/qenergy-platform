@@ -59,12 +59,12 @@ export function Sidebar({ onMenuClick }: SidebarProps) {
         {
           id: "project-management",
           labelKey: "projectManagement",
-          icon: <FolderCog className="w-4 h-4" />, // 관리 관련 아이콘으로 변경
+          icon: <FolderCog className="w-4 h-4" />, // Changed to management related icon
         },
         {
           id: "report-upload",
           labelKey: "reportUpload",
-          icon: <Upload className="w-4 h-4" />, // 업로드 아이콘으로 변경
+          icon: <Upload className="w-4 h-4" />, // Changed to upload icon
         },
         {
           id: "authorization",
@@ -81,12 +81,12 @@ export function Sidebar({ onMenuClick }: SidebarProps) {
         {
           id: "weekly-report",
           labelKey: "weeklyReport",
-          icon: <FileText className="w-4 h-4" />, // 리포트 아이콘으로 변경
+          icon: <FileText className="w-4 h-4" />, // Changed to report icon
         },
         {
           id: "project-history",
           labelKey: "projectDetail",
-          icon: <Eye className="w-4 h-4" />, // 상세보기 아이콘으로 변경
+          icon: <Eye className="w-4 h-4" />, // Changed to detail view icon
         },
       ],
     },

@@ -1,4 +1,4 @@
-from sqlalchemy import String, Date, Text as SAText, TIMESTAMP, text
+from sqlalchemy import String, Date, Text as SAText, TIMESTAMP, text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from . import Base
@@ -6,6 +6,9 @@ from . import Base
 
 class ProjectHistory(Base):
     __tablename__ = "project_history"
+    __table_args__ = (
+        UniqueConstraint("project_code", "log_date", "category", name="uq_history_project_code_log_date_category"),
+    )
 
     id: Mapped[str] = mapped_column(primary_key=True, server_default=text("gen_random_uuid()"))
     project_code: Mapped[str] = mapped_column(String(32), nullable=False)

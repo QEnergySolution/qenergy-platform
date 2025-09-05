@@ -61,6 +61,7 @@ frontend/node_modules
 test.py
 Weekly-analyzer/
 uploads/
+backend/.pytest_cache/
 
 # Company/project specific documents
 latex/
@@ -85,6 +86,7 @@ backups/
 *.backup
 *dump.sql
 *backup.sql
+data/
 
 # Configuration and credentials
 config/
