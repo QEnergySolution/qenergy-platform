@@ -40,6 +40,7 @@ export function WeeklyReport() {
   const [latestYear, setLatestYear] = useState<string>("")
   const [latestWeek, setLatestWeek] = useState<string>("")
   const [selectedCategory, setSelectedCategory] = useState<string>("all")
+  const isCategoryValid = selectedCategory && selectedCategory !== "all"
 
   // Analysis states
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -103,15 +104,23 @@ export function WeeklyReport() {
   useEffect(() => {
     const loadExistingResults = async () => {
       if (!pastWeek || !latestWeek) return
+      if (!isCategoryValid) return
 
       try {
-        const categoryFilter = selectedCategory && selectedCategory !== "all" ? selectedCategory : undefined
-        const results = await analysisService.getAnalysisResultsFormatted(
-          pastWeek, 
-          latestWeek, 
-          "EN", // Default language
-          categoryFilter as "Development" | "EPC" | "Finance" | "Investment" | undefined
+        const categoryFilter = selectedCategory as "Development" | "EPC" | "Finance" | "Investment"
+        const backendResults = await analysisService.getAnalysisResults(
+          pastWeek,
+          latestWeek,
+          "EN",
+          categoryFilter
         )
+        const results = backendResults.map(result => {
+          const formatted = analysisService.convertToFrontendFormat(result)
+          if (formatted.category === "Unknown") {
+            formatted.category = selectedCategory
+          }
+          return formatted
+        })
         if (results.length > 0) {
           setAnalysisResults(results)
           setHasAnalyzed(true)
@@ -123,12 +132,21 @@ export function WeeklyReport() {
     }
 
     void loadExistingResults()
-  }, [pastWeek, latestWeek, selectedCategory])
+  }, [pastWeek, latestWeek, selectedCategory, isCategoryValid])
 
-  const canStartAnalysis = pastYear && pastWeek && latestYear && latestWeek
+  const canStartAnalysis = pastYear && pastWeek && latestYear && latestWeek && isCategoryValid
 
   const startAnalysis = async () => {
-    if (!canStartAnalysis) return
+    if (!canStartAnalysis) {
+      if (!isCategoryValid) {
+        toast({
+          title: "Category Required",
+          description: "'All' is not supported yet. Please select a specific category.",
+          variant: "destructive",
+        })
+      }
+      return
+    }
 
     setIsAnalyzing(true)
     setAnalysisProgress(0)
@@ -137,11 +155,11 @@ export function WeeklyReport() {
 
     try {
       // First, get candidate projects to show progress
-      const categoryFilter = selectedCategory && selectedCategory !== "all" ? selectedCategory : undefined
+      const categoryFilter = selectedCategory as "Development" | "EPC" | "Finance" | "Investment"
       const candidates = await analysisService.getProjectCandidates(
         pastWeek, 
         latestWeek, 
-        categoryFilter as "Development" | "EPC" | "Finance" | "Investment" | undefined
+        categoryFilter
       )
       const totalProjects = candidates.length
 
@@ -162,16 +180,20 @@ export function WeeklyReport() {
         past_cw: pastWeek,
         latest_cw: latestWeek,
         language: "EN", // Could be made configurable
-        category: categoryFilter as "Development" | "EPC" | "Finance" | "Investment" | undefined,
+        category: categoryFilter,
         created_by: "frontend-user"
       })
 
       setAnalysisProgress(80)
 
       // Convert results to frontend format
-      const formattedResults = response.results.map(result => 
-        analysisService.convertToFrontendFormat(result)
-      )
+      const formattedResults = response.results.map(result => {
+        const formatted = analysisService.convertToFrontendFormat(result)
+        if (formatted.category === "Unknown") {
+          formatted.category = selectedCategory
+        }
+        return formatted
+      })
 
       setAnalysisResults(formattedResults)
       setAnalysisProgress(100)
@@ -257,7 +279,12 @@ export function WeeklyReport() {
     }
   }
 
+  const isIncomplete = (r: AnalysisResult) => !r.pastReportContent?.trim() || !r.latestReportContent?.trim()
   const sortedResults = [...analysisResults].sort((a, b) => {
+    const aIncomplete = isIncomplete(a)
+    const bIncomplete = isIncomplete(b)
+    if (aIncomplete !== bIncomplete) return aIncomplete ? 1 : -1 // incomplete rows go last
+
     let aValue: any = a[sortField]
     let bValue: any = b[sortField]
 
@@ -511,40 +538,44 @@ export function WeeklyReport() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedResults.map((result, _index) => (
-                    <tr key={result.projectCode} className="border-t hover:bg-muted/50">
+                  {sortedResults.map((result, _index) => {
+                    const rowIncomplete = isIncomplete(result)
+                    const riskBadgeClass = rowIncomplete ? "text-muted-foreground bg-muted" : getRiskColor(result.riskLevel)
+                    const similarityBadgeClass = rowIncomplete ? "text-muted-foreground bg-muted" : getSimilarityColor(result.similarity)
+                    return (
+                    <tr key={result.projectCode} className={`border-t hover:bg-muted/50 ${rowIncomplete ? "opacity-60" : ""}`}>
                       <td className="p-3 font-mono text-sm">{result.projectCode}</td>
                       <td className="p-3 font-medium">{result.projectName}</td>
                       <td className="p-3">
                         <span className="px-2 py-1 rounded text-sm bg-muted">{result.category}</span>
                       </td>
-                      <td className="p-3 max-w-xs">
-                        <div className="truncate" title={result.pastReportContent}>
+                      <td className="p-3 w-96 align-top">
+                        <div className="max-h-48 overflow-y-auto whitespace-pre-wrap text-sm pr-2">
                           {result.pastReportContent}
                         </div>
                       </td>
-                      <td className="p-3 max-w-xs">
-                        <div className="truncate" title={result.latestReportContent}>
+                      <td className="p-3 w-96 align-top">
+                        <div className="max-h-48 overflow-y-auto whitespace-pre-wrap text-sm pr-2">
                           {result.latestReportContent}
                         </div>
                       </td>
                       <td className="p-3">
-                        <span className={`px-2 py-1 rounded text-sm ${getRiskColor(result.riskLevel)}`}>
-                          {result.riskLevel}%
+                        <span className={`px-2 py-1 rounded text-sm ${riskBadgeClass}`}>
+                          {rowIncomplete ? "-" : `${result.riskLevel}%`}
                         </span>
                       </td>
-                      <td className="p-3 max-w-xs">
-                        <div className="truncate" title={result.riskOpinion}>
+                      <td className="p-3 w-96 align-top">
+                        <div className="max-h-48 overflow-y-auto whitespace-pre-wrap text-sm pr-2">
                           {result.riskOpinion}
                         </div>
                       </td>
                       <td className="p-3">
-                        <span className={`px-2 py-1 rounded text-sm ${getSimilarityColor(result.similarity)}`}>
-                          {result.similarity}%
+                        <span className={`px-2 py-1 rounded text-sm ${similarityBadgeClass}`}>
+                          {rowIncomplete ? "-" : `${result.similarity}%`}
                         </span>
                       </td>
-                      <td className="p-3 max-w-xs">
-                        <div className="truncate" title={result.similarityOpinion}>
+                      <td className="p-3 w-96 align-top">
+                        <div className="max-h-48 overflow-y-auto whitespace-pre-wrap text-sm pr-2">
                           {result.similarityOpinion}
                         </div>
                       </td>
@@ -561,7 +592,7 @@ export function WeeklyReport() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  )})}
                 </tbody>
               </table>
             </div>

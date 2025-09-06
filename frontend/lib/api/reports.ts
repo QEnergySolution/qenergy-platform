@@ -1,4 +1,4 @@
-const BASE_URL = (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL) || "http://localhost:8000/api";
+const BASE_URL = (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL) || "http://localhost:8002/api";
 
 export interface BulkUploadOkItem {
   fileName: string;

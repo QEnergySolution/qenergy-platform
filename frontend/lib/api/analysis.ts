@@ -3,7 +3,7 @@ import { apiClient } from './client'
 export interface AnalysisResult {
   id: string
   project_code: string
-  project_name?: string
+  project_name?: string | null
   category?: string | null
   cw_label: string
   language: 'EN' | 'KO'
@@ -12,6 +12,8 @@ export interface AnalysisResult {
   similarity_lvl?: number | null
   similarity_desc?: string | null
   negative_words?: { words: string[]; count: number } | null
+  past_content?: string | null
+  latest_content?: string | null
   created_at: string
   created_by: string
 }
@@ -51,8 +53,7 @@ export class AnalysisService {
       created_by: request.created_by || 'frontend-user'
     }
 
-    const response = await apiClient.post<AnalysisResponse>('reports/analyze', payload)
-    return response
+    return await apiClient.post<AnalysisResponse>('reports/analyze', payload)
   }
 
   /**
@@ -72,8 +73,7 @@ export class AnalysisService {
     if (language) params.append('language', language)
     if (category) params.append('category', category)
 
-    const response = await apiClient.get<AnalysisResult[]>(`weekly-analysis?${params}`)
-    return response
+    return await apiClient.get<AnalysisResult[]>(`weekly-analysis?${params}`)
   }
 
   /**
@@ -91,8 +91,7 @@ export class AnalysisService {
 
     if (category) params.append('category', category)
 
-    const response = await apiClient.get<ProjectCandidate[]>(`projects/by-cw-pair?${params}`)
-    return response
+    return await apiClient.get<ProjectCandidate[]>(`projects/by-cw-pair?${params}`)
   }
 
   /**
@@ -114,11 +113,11 @@ export class AnalysisService {
       projectCode: result.project_code,
       projectName: result.project_name || result.project_code,
       category: result.category || 'Unknown',
-      pastReportContent: 'Past report content', // This would need to be fetched separately
-      latestReportContent: 'Latest report content', // This would need to be fetched separately
-      riskLevel: result.risk_lvl || 0,
+      pastReportContent: result.past_content || 'No past content available',
+      latestReportContent: result.latest_content || 'No latest content available',
+      riskLevel: Math.round(result.risk_lvl || 0),
       riskOpinion: result.risk_desc || 'No risk assessment available',
-      similarity: result.similarity_lvl || 0,
+      similarity: Math.round(result.similarity_lvl || 0),
       similarityOpinion: result.similarity_desc || 'No similarity assessment available',
       negativeWords: result.negative_words?.words || []
     }

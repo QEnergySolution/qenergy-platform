@@ -24,11 +24,14 @@ class WeeklyReportAnalysisCreate(WeeklyReportAnalysisBase):
 
 class WeeklyReportAnalysisRead(WeeklyReportAnalysisBase):
     id: str
+    project_name: str | None = None
     risk_lvl: float | None = None
     risk_desc: str | None = None
     similarity_lvl: float | None = None
     similarity_desc: str | None = None
     negative_words: Dict[str, Any] | None = None
+    past_content: str | None = None
+    latest_content: str | None = None
     created_at: str
     created_by: str
 

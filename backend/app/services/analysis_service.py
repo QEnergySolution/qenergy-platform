@@ -100,14 +100,20 @@ class AnalysisService:
             return None
         
         # Aggregate content from all records for this project/CW
+        # Prefer source_text if available, otherwise use constructed content
         content_parts = []
         for record in records:
-            parts = [record.summary]
-            if record.title:
-                parts.insert(0, f"Title: {record.title}")
-            if record.next_actions:
-                parts.append(f"Next Actions: {record.next_actions}")
-            content_parts.append(" | ".join(parts))
+            if record.source_text and record.source_text.strip():
+                # Use source_text if available (this is the original text from documents)
+                content_parts.append(record.source_text.strip())
+            else:
+                # Fallback to constructed content from structured fields
+                parts = [record.summary]
+                if record.title:
+                    parts.insert(0, f"Title: {record.title}")
+                if record.next_actions:
+                    parts.append(f"Next Actions: {record.next_actions}")
+                content_parts.append(" | ".join(parts))
         
         return "\n\n".join(content_parts)
 
@@ -150,22 +156,27 @@ class AnalysisService:
         return list(set(found_words))  # Remove duplicates
 
     def calculate_similarity(self, past_content: str, latest_content: str) -> float:
-        """Calculate content similarity using simple word overlap"""
+        """Calculate content similarity using Jaccard similarity over normalized tokens"""
         if not past_content or not latest_content:
             return 0.0
-        
-        # Simple word-based similarity
-        past_words = set(past_content.lower().split())
-        latest_words = set(latest_content.lower().split())
-        
-        if not past_words and not latest_words:
+
+        import re
+        # Tokenize to alphanumeric words, lowercase, filter short tokens
+        def tokenize(text: str) -> set[str]:
+            tokens = re.findall(r"[A-Za-z0-9]+", text.lower())
+            return {t for t in tokens if len(t) >= 2}
+
+        past_tokens = tokenize(past_content)
+        latest_tokens = tokenize(latest_content)
+
+        if not past_tokens and not latest_tokens:
             return 100.0
-        if not past_words or not latest_words:
+        if not past_tokens or not latest_tokens:
             return 0.0
-        
-        intersection = past_words.intersection(latest_words)
-        union = past_words.union(latest_words)
-        
+
+        intersection = past_tokens.intersection(latest_tokens)
+        union = past_tokens.union(latest_tokens)
+
         return (len(intersection) / len(union)) * 100 if union else 0.0
 
     async def get_llm_analysis(
@@ -178,7 +189,7 @@ class AnalysisService:
         """Get risk and similarity analysis from LLM"""
         if not all([self.azure_api_key, self.azure_endpoint]):
             logger.warning("Azure OpenAI not configured, using fallback analysis")
-            return self._fallback_analysis(past_content, latest_content)
+            return self._fallback_analysis(past_content, latest_content, language)
         
         try:
             prompt = self._build_analysis_prompt(past_content, latest_content, language, project_code)
@@ -211,7 +222,7 @@ class AnalysisService:
                 
         except Exception as e:
             logger.error(f"LLM analysis failed for {project_code}: {e}")
-            return self._fallback_analysis(past_content, latest_content)
+            return self._fallback_analysis(past_content, latest_content, language)
 
     def _build_analysis_prompt(self, past_content: str, latest_content: str, language: Language, project_code: str) -> str:
         """Build analysis prompt for LLM"""
@@ -232,25 +243,26 @@ Provide analysis as JSON with exactly these fields:
 }}
 
 Risk level: 0=no risk, 100=critical risk
-Similarity level: 0=completely different, 100=identical content
+Similarity level: 0=completely different, 100=identical content (if one project is empty and another one have meaningful content, then similarity should be 0)
 Language: {language}
 Respond with valid JSON only."""
 
-    def _fallback_analysis(self, past_content: str, latest_content: str) -> Dict[str, Any]:
+    def _fallback_analysis(self, past_content: str, latest_content: str, language: Language) -> Dict[str, Any]:
         """Fallback analysis when LLM is not available"""
         similarity = self.calculate_similarity(past_content, latest_content)
-        
-        # Simple heuristic for risk based on negative words and content changes
+
+        # Use provided/detected language for negative words extraction
         combined_content = f"{past_content} {latest_content}"
-        negative_words = self.extract_negative_words(combined_content, "EN")
-        
+        negative_words = self.extract_negative_words(combined_content, language)
+
+        # Weighted heuristic: negative indicators and degree of change
         risk_level = min(len(negative_words) * 15 + (100 - similarity) * 0.3, 100)
-        
+
         return {
             "risk_lvl": round(risk_level, 2),
-            "risk_desc": f"Risk assessment based on {len(negative_words)} negative indicators and {100-similarity:.1f}% content change",
+            "risk_desc": f"Risk assessment based on {len(negative_words)} negative indicators and {100 - similarity:.1f}% content change",
             "similarity_lvl": round(similarity, 2),
-            "similarity_desc": f"Content similarity: {similarity:.1f}% word overlap"
+            "similarity_desc": f"Content similarity: {similarity:.1f}% token overlap"
         }
 
     def _generate_content_hash(self, past_content: str, latest_content: str) -> str:
@@ -287,10 +299,37 @@ Respond with valid JSON only."""
         # Generate content hash for cache invalidation
         content_hash = self._generate_content_hash(past_content, latest_content)
         
+        # If one side is missing, do not run analysis; return placeholder result for display
+        if not past_content or not latest_content:
+            from ..models.project import Project
+            project = db.query(Project).filter(Project.project_code == project_code).first()
+            project_name = project.project_name if project else None
+
+            # Similarity should be 0 when one side is empty (as per spec)
+            similarity = 0.0
+            placeholder = WeeklyReportAnalysisRead(
+                id=f"incomplete:{project_code}:{latest_cw}",
+                project_code=project_code,
+                project_name=project_name,
+                cw_label=latest_cw,
+                language=language,
+                category=category,
+                risk_lvl=None,
+                risk_desc="Insufficient data: present in only one period; analysis skipped",
+                similarity_lvl=similarity,
+                similarity_desc="One period missing; similarity = 0",
+                negative_words={"words": [], "count": 0},
+                past_content=past_content or "",
+                latest_content=latest_content or "",
+                created_at=str(datetime.utcnow()),
+                created_by=created_by
+            )
+            return placeholder, False
+
         # If exists and content hasn't changed, return existing
         if existing and existing.content_hash == content_hash:
             logger.info(f"Using cached analysis for {project_code} {latest_cw}")
-            return self._convert_to_read_schema(existing), False
+            return self._convert_to_read_schema(existing, db, past_cw), False
         
         # Perform new analysis
         logger.info(f"Analyzing {project_code} for {past_cw} -> {latest_cw}")
@@ -300,18 +339,35 @@ Respond with valid JSON only."""
         if language != detected_language:
             logger.info(f"Language override: requested {language}, detected {detected_language}")
         
-        # Extract features
-        negative_words = self.extract_negative_words(f"{past_content} {latest_content}", language)
+        # Extract features using detected language for better accuracy
+        negative_words = self.extract_negative_words(f"{past_content} {latest_content}", detected_language)
         
         # Get LLM analysis
         llm_result = await self.get_llm_analysis(past_content, latest_content, language, project_code)
+        
+        # Determine the most appropriate category if not explicitly provided
+        effective_category = category
+        if not effective_category:
+            # Try to infer category from project history records
+            latest_records = db.query(ProjectHistory).filter(
+                and_(
+                    ProjectHistory.project_code == project_code,
+                    ProjectHistory.cw_label == latest_cw
+                )
+            ).all()
+            
+            if latest_records:
+                # Use the most common category from the latest records
+                categories = [r.category for r in latest_records if r.category]
+                if categories:
+                    effective_category = max(set(categories), key=categories.count)
         
         # Create analysis record
         analysis_data = WeeklyReportAnalysisCreate(
             project_code=project_code,
             cw_label=latest_cw,
             language=language,
-            category=category,
+            category=effective_category,
             risk_lvl=llm_result.get("risk_lvl"),
             risk_desc=llm_result.get("risk_desc"),
             similarity_lvl=llm_result.get("similarity_lvl"),
@@ -329,7 +385,7 @@ Respond with valid JSON only."""
             existing.content_hash = content_hash  # Update content hash
             db.commit()
             db.refresh(existing)
-            return self._convert_to_read_schema(existing), False
+            return self._convert_to_read_schema(existing, db, past_cw), False
         else:
             # Create new
             analysis_dict = analysis_data.model_dump()
@@ -338,13 +394,34 @@ Respond with valid JSON only."""
             db.add(new_analysis)
             db.commit()
             db.refresh(new_analysis)
-            return self._convert_to_read_schema(new_analysis), True
+            return self._convert_to_read_schema(new_analysis, db, past_cw), True
 
-    def _convert_to_read_schema(self, analysis: WeeklyReportAnalysis) -> WeeklyReportAnalysisRead:
-        """Convert SQLAlchemy model to Pydantic read schema"""
+    def _convert_to_read_schema(self, analysis: WeeklyReportAnalysis, db: Session = None, past_cw: str = None) -> WeeklyReportAnalysisRead:
+        """Convert SQLAlchemy model to Pydantic read schema with enriched data"""
+        project_name = None
+        past_content = None
+        latest_content = None
+        
+        if db:
+            # Get project name from projects table
+            from ..models.project import Project
+            project = db.query(Project).filter(Project.project_code == analysis.project_code).first()
+            if project:
+                project_name = project.project_name
+            
+            # Get content for both periods if past_cw is provided
+            if past_cw:
+                past_content = self.get_project_content_for_cw(
+                    db, analysis.project_code, past_cw, analysis.category
+                )
+                latest_content = self.get_project_content_for_cw(
+                    db, analysis.project_code, analysis.cw_label, analysis.category
+                )
+        
         return WeeklyReportAnalysisRead(
             id=str(analysis.id),
             project_code=analysis.project_code,
+            project_name=project_name,
             cw_label=analysis.cw_label,
             language=analysis.language,
             category=analysis.category,
@@ -353,6 +430,8 @@ Respond with valid JSON only."""
             similarity_lvl=analysis.similarity_lvl,
             similarity_desc=analysis.similarity_desc,
             negative_words=analysis.negative_words,
+            past_content=past_content,
+            latest_content=latest_content,
             created_at=str(analysis.created_at),
             created_by=analysis.created_by
         )
@@ -365,7 +444,7 @@ Respond with valid JSON only."""
         language: Optional[Language] = None,
         category: Optional[Category] = None
     ) -> List[WeeklyReportAnalysisRead]:
-        """Get existing analysis results"""
+        """Get existing analysis results with enriched data"""
         query = db.query(WeeklyReportAnalysis).filter(
             WeeklyReportAnalysis.cw_label == latest_cw
         )
@@ -376,4 +455,4 @@ Respond with valid JSON only."""
             query = query.filter(WeeklyReportAnalysis.category == category)
         
         results = query.all()
-        return [self._convert_to_read_schema(analysis) for analysis in results]
+        return [self._convert_to_read_schema(analysis, db, past_cw) for analysis in results]
