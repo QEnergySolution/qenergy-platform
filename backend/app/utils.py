@@ -1,17 +1,29 @@
 """
 Utility functions shared across modules
+
+Method:
+- Accent-insensitive alias matching (space/_/- variants; digits glued; alnum-only).
+- Generic 'Name + capacity' patterns mapped back by fuzzy token_set_ratio.
+- Cluster expansion (mentioning cluster names maps to all projects in that cluster).
+- Near-boundary merge: if two project mentions are too close, extend first section to the third boundary
+  and duplicate for the second project, so both get the same source_text.
 """
+
 import csv
 import logging
 import re
+import unicodedata
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Iterable, Dict, List, Tuple, Set
 
 from docx import Document
 from fastapi import UploadFile
 from sqlalchemy import text
+from rapidfuzz import process, fuzz
 
 logger = logging.getLogger(__name__)
+
+# ------------------------------ filename parsing (unchanged signature/output) ------------------------------
 
 # Legacy strict pattern (kept for reference)
 _FILENAME_RE_STRICT = re.compile(r"^(?P<year>\d{4})_CW(?P<cw>\d{2})_(?P<cat>DEV|EPC|FINANCE|INVESTMENT)\.docx$", re.IGNORECASE)
@@ -32,27 +44,12 @@ _CAT_MAP = {
     "INVESTMENT": "Investment",
 }
 
-
 def parse_filename(filename: str):
-    """Parse filename to extract year, cw_label and category.
-    
-    This function is now more flexible and can handle various filename formats
-    as long as they contain:
-    1. A calendar week number (CW##)
-    2. A category (DEV, EPC, FINANCE, INVESTMENT or their variations)
-    
-    Examples of supported formats:
-    - 2025_CW01_DEV.docx (strict format)
-    - Weekly Report_CW16 - DEV.docx
-    - CW01 Development Report.docx
-    - Report CW02 EPC 2025.docx
-    """
-    # Remove .docx extension for parsing
+    """Parse filename to extract year, cw_label and category (signature & output unchanged)."""
     name_without_ext = filename.lower()
     if name_without_ext.endswith('.docx'):
         name_without_ext = name_without_ext[:-5]
-    
-    # Try strict pattern first (for backward compatibility)
+
     strict_match = _FILENAME_RE_STRICT.match(filename)
     if strict_match:
         year = int(strict_match.group("year"))
@@ -60,16 +57,13 @@ def parse_filename(filename: str):
         raw = strict_match.group("cat").upper()
         category = _CAT_MAP.get(raw, raw)
         return year, cw_label, raw, category
-    
-    # Extract CW number
+
     cw_match = _CW_PATTERN.search(filename)
     if not cw_match:
         raise ValueError("INVALID_NAME: No calendar week (CW##) found in filename")
-    
     cw_num = int(cw_match.group(1))
-    cw_label = f"CW{cw_num:02d}"  # Format as CW01, CW02, etc.
-    
-    # Extract category
+    cw_label = f"CW{cw_num:02d}"
+
     category_raw = None
     category = None
     for pattern, cat_raw in _CATEGORY_PATTERNS:
@@ -77,452 +71,31 @@ def parse_filename(filename: str):
             category_raw = cat_raw
             category = _CAT_MAP.get(cat_raw, cat_raw)
             break
-    
     if not category_raw:
         raise ValueError("INVALID_NAME: No valid category (DEV, EPC, FINANCE, INVESTMENT) found in filename")
-    
-    # Try to extract year (optional, default to current year if not found)
+
     year_match = re.search(r"\b(20\d{2})\b", filename)
     if year_match:
         year = int(year_match.group(1))
     else:
-        # Default to current year if no year found in filename
         from datetime import datetime
         year = datetime.now().year
-    
+
     return year, cw_label, category_raw, category
 
 
-def parse_docx_rows(file: UploadFile, cw_label: str, category: str) -> list[dict]:
-    """Enhanced project-aware parser that identifies project sections and aggregates text by project.
-    
-    Identifies project start lines using multiple patterns:
-    1. • project_name: (bullet with colon)
-    2. • project_name (bullet on separate line)
-    3. (Country/Region) project_name capacity/number (e.g., "(Spain) Taurus A-3 105MW")
-    4. Standalone project_name/number line (e.g., "Taurus A-1")
-    
-    Aggregates source_text from project start line until next project or end of file.
-    """
-    rows: list[dict] = []
-    try:
-        document = Document(file.file)
-    except Exception:
-        # parsing failed -> return one empty row to avoid crashing
-        rows.append({
-            "category": category,
-            "entry_type": "Report",
-            "cw_label": cw_label,
-            "title": None,
-            "summary": "",
-            "next_actions": None,
-            "owner": None,
-            "attachment_url": None,
-        })
-        return rows
+# ------------------------------ CSV/KB utilities ------------------------------
 
-    # Load project names for matching
-    project_names = _load_all_project_names()
-    
-    # Extract all lines in order
-    all_lines: list[str] = []
-    for p in document.paragraphs:
-        text = (p.text or "").strip()
-        if text:
-            all_lines.append(text)
-    
-    # Also extract table content as lines
-    for table in document.tables:
-        for row in table.rows:
-            cells = [(cell.text or "").strip() for cell in row.cells]
-            cells = [c for c in cells if c]
-            if cells:
-                all_lines.append(" | ".join(cells))
-
-    if not all_lines:
-        # No content found, return empty summary
-        rows.append({
-            "category": category,
-            "entry_type": "Report", 
-            "cw_label": cw_label,
-            "title": None,
-            "summary": "",
-            "next_actions": None,
-            "owner": None,
-            "attachment_url": None,
-        })
-        return rows
-
-    # Process lines to identify project sections
-    projects = _identify_project_sections(all_lines, project_names)
-    
-    # Convert projects to rows
-    for project_name, source_text in projects:
-        if source_text.strip():  # Only create rows with content
-            rows.append({
-                "category": category,
-                "entry_type": "Report",
-                "cw_label": cw_label,
-                "title": f"{project_name} - {cw_label}",
-                "summary": source_text.strip(),
-                "next_actions": None,
-                "owner": None,
-                "attachment_url": None,
-            })
-    
-    # If no projects found, create one summary row
-    if not rows:
-        summary = "\n".join(all_lines).strip()
-        rows.append({
-            "category": category,
-            "entry_type": "Report",
-            "cw_label": cw_label,
-            "title": None,
-            "summary": summary,
-            "next_actions": None,
-            "owner": None,
-            "attachment_url": None,
-        })
-    
-    return rows
-
-
-def _load_all_project_names() -> set[str]:
-    """Load all project names from CSV for project identification (case-insensitive)."""
-    try:
-        mapping = load_project_name_to_code_mapping()
-        # Get original project names (before lowercase normalization)
-        csv_path = _default_project_csv_path()
-        project_names = set()
-
-        if csv_path.exists():
-            # Try different encodings to handle special characters
-            for encoding in ["utf-8", "latin-1", "cp1252"]:
-                try:
-                    with csv_path.open("r", encoding=encoding) as f:
-                        reader = csv.DictReader(f, delimiter=";")
-                        for row in reader:
-                            name = (row.get("project_name") or "").strip()
-                            status_str = (row.get("status") or "0").strip()
-                            if name and status_str in ("1", "true", "True"):
-                                project_names.add(name.lower())  # Convert to lowercase
-                    break  # Successfully loaded with this encoding
-                except UnicodeDecodeError:
-                    continue  # Try next encoding
-
-        return project_names
-    except Exception as e:
-        logger.warning(f"Failed to load project names: {e}")
-        return set()
-
-
-def _identify_project_sections(all_lines: list[str], project_names: set[str]) -> list[tuple[str, str]]:
-    """Identify project sections by searching for known project names, project patterns, and special formats.
-
-    Returns list of (project_name, aggregated_source_text) tuples.
-    """
-    # Join all lines into a single text for easier searching
-    full_text = "\n".join(all_lines)
-    text_lower = full_text.lower()
-
-    # Find all project name occurrences with their positions
-    project_positions = []
-
-    # 1. Search for exact project names from CSV
-    for project_name in project_names:
-        name_lower = project_name.lower()
-
-        # Find all occurrences of this project name
-        start = 0
-        while True:
-            pos = text_lower.find(name_lower, start)
-            if pos == -1:
-                break
-
-            # Validate that this is a word boundary match (not part of another word)
-            if _is_valid_project_match(full_text, pos, len(project_name)):
-                project_positions.append((pos, project_name))
-
-            start = pos + 1
-
-    # 2. Search for common project patterns in the document
-    project_patterns = _find_project_patterns_in_text(full_text, project_names)
-
-    for pos, pattern_name in project_patterns:
-        project_positions.append((pos, pattern_name))
-
-    # 3. Search for special format patterns like "(Country) ProjectName capacity"
-    special_formats = _find_special_format_projects(full_text)
-
-    for pos, project_name, country, capacity in special_formats:
-        project_positions.append((pos, project_name))
-
-    # Sort by position in the document
-    project_positions.sort(key=lambda x: x[0])
-
-    # Remove duplicates (keep first occurrence of each project, prefer exact matches)
-    seen_projects = set()
-    unique_positions = []
-    for pos, name in project_positions:
-        # Create a normalized key for deduplication (handle similar projects)
-        # Remove capacity information and extra spaces for better deduplication
-        normalized_name = re.sub(r'\s+\d+(?:\.\d+)?\s*(?:MW|MVA|MWp|MWh|MWh/2h|MWh/4h|MWh/6h|MWh/8h|MWh/10h|MWh/12h|MWh/400MWh|MWh/100MW)+?$', '', name.lower().strip())
-        normalized_name = re.sub(r'\s+', ' ', normalized_name).strip()
-
-        if normalized_name not in seen_projects:
-            unique_positions.append((pos, name))
-            seen_projects.add(normalized_name)
-
-    if not unique_positions:
-        return []
-
-    # Extract text segments between project positions
-    projects = []
-    for i, (pos, project_name) in enumerate(unique_positions):
-        # Find the start position for this project's text
-        start_pos = pos
-
-        # Find the end position (start of next project or end of text)
-        if i + 1 < len(unique_positions):
-            end_pos = unique_positions[i + 1][0]
-        else:
-            end_pos = len(full_text)
-
-        # Extract the text segment for this project
-        project_text = full_text[start_pos:end_pos].strip()
-
-        if project_text:
-            projects.append((project_name, project_text))
-
-    return projects
-
-
-def _is_valid_project_match(text: str, pos: int, length: int) -> bool:
-    """Validate that a project name match is not part of another word."""
-    # Convert text to lowercase for case-insensitive matching
-    text_lower = text.lower()
-
-    # Check character before the match
-    if pos > 0:
-        char_before = text_lower[pos - 1]
-        if char_before.isalnum():
-            return False
-
-    # Check character after the match
-    end_pos = pos + length
-    if end_pos < len(text_lower):
-        char_after = text_lower[end_pos]
-        if char_after.isalnum():
-            return False
-
-    return True
-
-
-def _find_special_format_projects(full_text: str) -> list[tuple[int, str, str, str]]:
-    """Find special format projects like '(Country) ProjectName capacity'.
-
-    Returns: list of (position, project_name, country, capacity)
-    """
-    special_projects = []
-
-    # Multiple patterns to handle various formats
-    patterns = [
-        # Standard format: (Country) ProjectName capacity
-        r'\(([^)]+)\)\s*([A-Za-z_0-9\s\-+]+?)\s+(\d+(?:\.\d+)?\s*(?:MW|MVA|MWp|MWh|MWh/2h|MWh/4h|MWh/6h|MWh/8h|MWh/10h|MWh/12h|MWh/400MWh|MWh/100MW)+?)',
-
-        # Format without spaces before capacity: (Country) ProjectName capacity
-        r'\(([^)]+)\)\s*([A-Za-z_0-9\s\-+]+?)(\d+(?:\.\d+)?\s*(?:MW|MVA|MWp|MWh|MWh/2h|MWh/4h|MWh/6h|MWh/8h|MWh/10h|MWh/12h|MWh/400MWh|MWh/100MW)+?)',
-
-        # Format with complex capacity: (Country) ProjectName capacity/unit
-        r'\(([^)]+)\)\s*([A-Za-z_0-9\s\-+]+?)\s+(\d+(?:\.\d+)?(?:MW|MVA|MWp|MWh|MWh/2h|MWh/4h|MWh/6h|MWh/8h|MWh/10h|MWh/12h)+?/\d+(?:\.\d+)?(?:MW|MVA|MWp|MWh|MWh/2h|MWh/4h|MWh/6h|MWh/8h|MWh/10h|MWh/12h|MWh/400MWh|MWh/100MW)+?)',
-
-        # Simple format: (Country) ProjectName (no capacity)
-        r'\(([^)]+)\)\s*([A-Za-z_0-9\s\-+]+?)(?:\s*\([^)]*\))?\s*$',
-    ]
-
-    for pattern in patterns:
-        for match in re.finditer(pattern, full_text, re.IGNORECASE | re.MULTILINE):
-            pos = match.start()
-            country = match.group(1).strip()
-            project_part = match.group(2).strip()
-            capacity = match.group(3).strip() if len(match.groups()) > 2 and match.group(3) else ""
-
-            # Clean up project name (remove extra spaces, normalize)
-            project_name = re.sub(r'\s+', ' ', project_part).strip()
-
-            # Skip if project name is too short or contains only numbers/special chars
-            if len(project_name) < 2 or re.match(r'^[\d\s\-\+]+$', project_name):
-                continue
-
-            special_projects.append((pos, project_name, country, capacity))
-
-    return special_projects
-
-
-def _find_project_patterns_in_text(full_text: str, project_names: set[str]) -> list[tuple[int, str]]:
-    """Find project patterns in text that might not exactly match CSV names (case-insensitive)."""
-    patterns = []
-    text_lower = full_text.lower()
-
-    # Common project patterns observed in the document (already lowercase)
-    project_patterns = [
-        "taurus a-1", "taurus a-2", "taurus a-3",
-        "peñaflor", "mudejar", "andujar", "almodovar",
-        "hermann", "carmona", "brovales", "cabrovales",
-        "tordesillas", "zaratan_bess", "divor"
-    ]
-
-    for pattern in project_patterns:
-        start = 0
-        while True:
-            pos = text_lower.find(pattern, start)
-            if pos == -1:
-                break
-
-            # Validate word boundary
-            if _is_valid_project_match(full_text, pos, len(pattern)):
-                # Use the original case from the document
-                original_text = full_text[pos:pos + len(pattern)]
-                patterns.append((pos, original_text))
-
-            start = pos + 1
-
-    # Look for patterns like "(Country) ProjectName XX.XMW" - case insensitive
-    import re
-    country_pattern = re.compile(r'\(([^)]+)\)\s*([A-Z][A-Za-z_0-9\s\-]+?)\s*(?:\d+(?:\.\d+)?\s*MW)', re.IGNORECASE)
-
-    for match in country_pattern.finditer(full_text):
-        pos = match.start()
-        country = match.group(1).strip()
-        project_part = match.group(2).strip()
-
-        # Clean up the project name
-        project_name = project_part.strip()
-        if project_name and len(project_name) > 3:
-            patterns.append((pos, project_name))
-
-    # Look for standalone project names followed by capacity - case insensitive
-    standalone_pattern = re.compile(r'^([A-Z][A-Za-z_0-9\s\-]+?)\s+(\d+(?:\.\d+)?\s*MW):', re.MULTILINE | re.IGNORECASE)
-
-    for match in standalone_pattern.finditer(full_text):
-        pos = match.start()
-        project_name = match.group(1).strip()
-
-        if project_name and len(project_name) > 3:
-            patterns.append((pos, project_name))
-
-    return patterns
-
-
-def _detect_project_start_line(line: str, project_names: set[str]) -> str | None:
-    """Detect if a line indicates the start of a project section.
-    
-    Returns the detected project name or None.
-    """
-    line_stripped = line.strip()
-    if not line_stripped:
-        return None
-    
-    # Pattern 1: • project_name: (bullet with colon)
-    bullet_colon_match = re.match(r'^\s*[•·‧▪▫]\s*([^:]+):\s*$', line_stripped)
-    if bullet_colon_match:
-        candidate = bullet_colon_match.group(1).strip()
-        if _is_known_project(candidate, project_names):
-            return candidate
-    
-    # Pattern 2: • project_name (bullet on separate line)
-    bullet_match = re.match(r'^\s*[•·‧▪▫]\s*(.+)$', line_stripped)
-    if bullet_match:
-        candidate = bullet_match.group(1).strip()
-        if _is_known_project(candidate, project_names):
-            return candidate
-    
-    # Pattern 3: (Country/Region) project_name capacity/number
-    # e.g., "(Spain) Taurus A-3 105MW", "(Spain) Hermann 103.9 MW"
-    country_match = re.match(r'^\s*\([^)]+\)\s*(.+?)(?:\s+\d+(?:\.\d+)?\s*MW|\s+\d+MW|\s*\d+(?:\.\d+)?\s*MW)?$', line_stripped)
-    if country_match:
-        candidate = country_match.group(1).strip()
-        if _is_known_project(candidate, project_names):
-            return candidate
-        # Also try variations like "Taurus A-3" from "Taurus A-3 105MW"
-        name_parts = candidate.split()
-        if len(name_parts) >= 2:
-            for i in range(2, len(name_parts) + 1):
-                partial = " ".join(name_parts[:i])
-                if _is_known_project(partial, project_names):
-                    return partial
-    
-    # Pattern 4: Standalone project_name/number line
-    # e.g., "Taurus A-1", "Peñaflor 105.1MW"
-    # Look for lines with project-like patterns (spaces, hyphens, numbers)
-    if re.search(r'[A-Za-z]+[\s\-_]+[A-Za-z0-9]+', line_stripped):
-        # Remove common suffixes like MW, capacity info
-        candidate = re.sub(r'\s+\d+(?:\.\d+)?\s*MW.*$', '', line_stripped).strip()
-        candidate = re.sub(r'\s*:.*$', '', candidate).strip()  # Remove colon and after
-        
-        if _is_known_project(candidate, project_names):
-            return candidate
-        
-        # Try progressive shorter versions
-        parts = candidate.split()
-        if len(parts) >= 2:
-            for i in range(len(parts), 1, -1):
-                partial = " ".join(parts[:i])
-                if _is_known_project(partial, project_names):
-                    return partial
-    
-    return None
-
-
-def _is_known_project(candidate: str, project_names: set[str]) -> bool:
-    """Check if a candidate string matches a known project name."""
-    if not candidate:
-        return False
-    
-    candidate = candidate.strip()
-    
-    # Exact match
-    if candidate in project_names:
-        return True
-    
-    # Case-insensitive match
-    candidate_lower = candidate.lower()
-    for project_name in project_names:
-        if candidate_lower == project_name.lower():
-            return True
-    
-    # Partial match for compound names (e.g., "Taurus A-3" should match if we have project with similar name)
-    for project_name in project_names:
-        if candidate_lower in project_name.lower() or project_name.lower() in candidate_lower:
-            # Additional check to avoid false positives
-            if len(candidate) >= 4 and len(project_name) >= 4:  # Minimum meaningful length
-                return True
-    
-    return False
-
-
-# --- Project mapping (project_name -> project_code) loaded from CSV ---
 _PROJECT_NAME_TO_CODE_CACHE: dict[str, str] | None = None
 
-
 def _default_project_csv_path() -> Path:
-    """Resolve the repository-root `data/project.csv` path robustly.
-
-    We locate this file relative to the current file: backend/app/utils.py → repo_root/data/project.csv
-    """
+    """Resolve canonical data/project.csv path (repo-root/data/project.csv)."""
     here = Path(__file__).resolve()
     repo_root = here.parents[2]  # .../qenergy-platform
     return repo_root / "data" / "project.csv"
 
-
 def load_project_name_to_code_mapping(csv_path: Optional[Path] = None, *, force_reload: bool = False) -> dict[str, str]:
-    """Load mapping from project_name to project_code from the canonical CSV.
-
-    - CSV schema: project_code;project_name;portfolio_cluster;status
-    - Only status==1 considered active and included
-    - Keys are normalized to lowercase stripped strings
-    - Result is cached in-process; pass force_reload=True to refresh
-    """
+    """project_name -> project_code (status=1 only). Keys are lowercase."""
     global _PROJECT_NAME_TO_CODE_CACHE
     if _PROJECT_NAME_TO_CODE_CACHE is not None and not force_reload:
         return _PROJECT_NAME_TO_CODE_CACHE
@@ -533,44 +106,414 @@ def load_project_name_to_code_mapping(csv_path: Optional[Path] = None, *, force_
         _PROJECT_NAME_TO_CODE_CACHE = mapping
         return mapping
 
-    # Try different encodings to handle special characters
     for encoding in ["utf-8", "latin-1", "cp1252"]:
         try:
             with path.open("r", encoding=encoding) as f:
                 reader = csv.DictReader(f, delimiter=";")
                 for row in reader:
-                    try:
-                        code = (row.get("project_code") or "").strip()
-                        name = (row.get("project_name") or "").strip()
-                        status_str = (row.get("status") or "0").strip()
-                        if not code or not name:
-                            continue
-                        if status_str not in ("1", "true", "True"):
-                            continue
-                        key = name.lower()
-                        mapping[key] = code
-                    except Exception:
-                        # Skip malformed rows silently
+                    code = (row.get("project_code") or "").strip()
+                    name = (row.get("project_name") or "").strip()
+                    status_str = (row.get("status") or "0").strip()
+                    if not code or not name:
                         continue
-            break  # Successfully loaded with this encoding
+                    if status_str not in ("1", "true", "True"):
+                        continue
+                    mapping[name.lower()] = code
+            break
         except UnicodeDecodeError:
-            continue  # Try next encoding
+            continue
 
     _PROJECT_NAME_TO_CODE_CACHE = mapping
     return mapping
 
+def _load_kb_from_csv() -> tuple[list[str], dict[str, list[str]]]:
+    """Return (project_names_original_case, cluster_to_projects) for status==1."""
+    path = _default_project_csv_path()
+    projects: list[str] = []
+    clusters: dict[str, list[str]] = {}
+    if not path.exists():
+        return projects, clusters
+
+    for encoding in ["utf-8", "latin-1", "cp1252"]:
+        try:
+            with path.open("r", encoding=encoding) as f:
+                reader = csv.DictReader(f, delimiter=";")
+                for row in reader:
+                    name = (row.get("project_name") or "").strip()
+                    cluster = (row.get("portfolio_cluster") or "").strip()
+                    status_str = (row.get("status") or "0").strip()
+                    if not name or status_str not in ("1", "true", "True"):
+                        continue
+                    projects.append(name)
+                    if cluster:
+                        clusters.setdefault(cluster, []).append(name)
+            break
+        except UnicodeDecodeError:
+            continue
+    return projects, clusters
+
+
+# ------------------------------ text/alias utilities ------------------------------
+
+LATIN_EXT = r"A-Za-z0-9'’_\-\s\.+À-ÖØ-öø-ÿ"
+
+def _fold_accents(s: str) -> str:
+    """Accent-insensitive folding (NFKD + remove diacritics)."""
+    s = unicodedata.normalize("NFKD", s)
+    return "".join(ch for ch in s if not unicodedata.combining(ch))
+
+def _norm(s: str) -> str:
+    """Normalize string for comparison."""
+    s0 = _fold_accents(s).lower()
+    s0 = re.sub(r'[_\-]+', ' ', s0)
+    s0 = re.sub(r'\s+', ' ', s0).strip()
+    return s0
+
+def _alias_variants(name: str) -> Set[str]:
+    """Generate alias variants without hardcoding lists."""
+    base = name.strip()
+    if not base:
+        return set()
+    v = {
+        base,
+        base.replace('_', ' '),
+        base.replace('_', '-'),
+        base.replace('-', ' '),
+        base.replace('-', '_'),
+        re.sub(r'\s+', ' ', base),
+        re.sub(r'([A-Za-z])\s+(\d)', r'\1\2', base),
+        re.sub(r'(\d)\s+([A-Za-z])', r'\1\2', base),
+        re.sub(r'[\s_\-]+', '', base),
+    }
+    return {re.sub(r'\s+', ' ', x).strip() for x in v if x}
+
+def _compile_alias_regex(aliases: Iterable[str]) -> List[re.Pattern]:
+    """Chunked boundary-aware regexes over normalized/folded text."""
+    alias_list = sorted({a for a in (_norm(x) for x in aliases) if a and len(a) >= 3}, key=len, reverse=True)
+
+    def to_pat(a: str) -> str:
+        parts = [re.escape(p) for p in a.split(' ') if p]
+        if not parts:
+            return ''
+        return r'\b' + r'[ _\-]+'.join(parts) + r'\b'
+
+    pats = [to_pat(a) for a in alias_list if to_pat(a)]
+    CHUNK = 1200
+    compiled = []
+    for i in range(0, len(pats), CHUNK):
+        sub = pats[i:i+CHUNK]
+        if sub:
+            compiled.append(re.compile('(?:' + '|'.join(sub) + ')', flags=re.IGNORECASE))
+    return compiled
+
+
+# ------------------------------ mention detection ------------------------------
+
+def _find_alias_mentions(full_text: str,
+                         project_names: List[str],
+                         cluster_to_projects: Dict[str, List[str]]
+                         ) -> Tuple[List[Tuple[int, str, List[str], str]], List[str]]:
+    """
+    Returns:
+      mentions: [(pos, raw_slice, [canonical_projects], kind)] kind in {"project","cluster"}
+      debug_unmatched: raw alias slices that could not be mapped confidently
+    """
+    project_aliases = set()
+    for pname in project_names:
+        project_aliases |= _alias_variants(pname)
+
+    cluster_aliases = set()
+    for cluster in cluster_to_projects.keys():
+        cluster_aliases |= _alias_variants(cluster)
+
+    text_fold = _fold_accents(full_text).lower()
+    mentions: List[Tuple[int, str, List[str], str]] = []
+    debug_unmatched: List[str] = []
+
+    # Projects
+    for rx in _compile_alias_regex(project_aliases):
+        for m in rx.finditer(text_fold):
+            start, end = m.span()
+            raw = full_text[start:end]
+            best = process.extractOne(raw, project_names, scorer=fuzz.token_set_ratio)
+            if best and best[1] >= 90:
+                mentions.append((start, raw, [best[0]], "project"))
+            else:
+                debug_unmatched.append(raw)
+
+    # Clusters (expand to all projects)
+    cluster_list = list(cluster_to_projects.keys())
+    for rx in _compile_alias_regex(cluster_aliases):
+        for m in rx.finditer(text_fold):
+            start, end = m.span()
+            raw = full_text[start:end]
+            best = process.extractOne(raw, cluster_list, scorer=fuzz.token_set_ratio)
+            if best and best[1] >= 88:
+                expanded = cluster_to_projects.get(best[0], [])
+                if expanded:
+                    mentions.append((start, raw, list(expanded), "cluster"))
+            else:
+                debug_unmatched.append(raw)
+
+    return mentions, debug_unmatched
+
+def _find_generic_pattern_mentions(full_text: str,
+                                   project_names: List[str],
+                                   cluster_to_projects: Dict[str, List[str]],
+                                   fuzzy_threshold_project: int = 86,
+                                   fuzzy_threshold_cluster: int = 84
+                                   ) -> Tuple[List[Tuple[int, str, List[str], str]], List[Tuple[str, int, int]]]:
+    """
+    Generic patterns like:
+      "(Country) Name 105MW", "Name (65 MW)", "Name 95.88 MW", "Name 62.5MWp"
+      "(Country) Name (Details)", "(Country) Name (capacity details)"
+    Returns:
+      mentions: [(pos, doc_name, [canonical_projects], kind)]
+      low_conf: [(doc_name, start_pos, best_project_score)]
+    """
+    name_token = rf"[{LATIN_EXT}]+?"
+    cap = r"(?:\d+(?:[.,]\d+)?\s*(?:MWp?|MVA|MWh(?:/\d+h)?))"
+    re_country = re.compile(rf"\((?:[^)]+)\)\s*({name_token})\s+{cap}", re.IGNORECASE)
+    re_paren_cap = re.compile(rf"({name_token})\s*\(\s*{cap}\s*\)", re.IGNORECASE)
+    re_inline_cap = re.compile(rf"({name_token})\s+{cap}", re.IGNORECASE)
+    # New pattern for (Country) Name (Details) format
+    re_country_paren = re.compile(rf"\((?:[^)]+)\)\s*({name_token})\s*\((?:[^)]+)\)", re.IGNORECASE)
+
+    mentions: List[Tuple[int, str, List[str], str]] = []
+    low_conf: List[Tuple[str, int, int]] = []
+
+    cluster_list = list(cluster_to_projects.keys())
+
+    def try_accept(doc_name: str, start_pos: int):
+        s = doc_name.strip(" _-:;,.()").strip()
+        if len(s) < 3:
+            return
+        best_p = process.extractOne(s, project_names, scorer=fuzz.token_set_ratio)
+        if best_p and best_p[1] >= fuzzy_threshold_project:
+            mentions.append((start_pos, s, [best_p[0]], "project"))
+            return
+        best_c = process.extractOne(s, cluster_list, scorer=fuzz.token_set_ratio)
+        if best_c and best_c[1] >= fuzzy_threshold_cluster:
+            expanded = cluster_to_projects.get(best_c[0], [])
+            if expanded:
+                mentions.append((start_pos, s, list(expanded), "cluster"))
+                return
+        low_conf.append((s, start_pos, (best_p[1] if best_p else 0)))
+
+    for rx in (re_country, re_paren_cap, re_inline_cap, re_country_paren):
+        for m in rx.finditer(full_text):
+            try_accept(m.group(1), m.start(1))
+
+    return mentions, low_conf
+
+def _dedupe_and_pack(mentions: List[Tuple[int, str, List[str], str]]) -> List[Tuple[int, List[str]]]:
+    """
+    Deduplicate and return [(pos, [canonical_project_names])]
+    (We keep only canonical names and positions for sectioning.)
+    """
+    # expand to (pos, proj)
+    expanded: List[Tuple[int, str]] = []
+    for pos, _raw, projs, _kind in mentions:
+        expanded.extend((pos, p) for p in projs)
+
+    # dedupe by (pos, project) while preserving order
+    seen = set()
+    pos_to_projects: Dict[int, List[str]] = {}
+    for pos, proj in sorted(expanded, key=lambda x: (x[0], x[1].lower())):
+        key = (pos, proj.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        pos_to_projects.setdefault(pos, [])
+        if proj not in pos_to_projects[pos]:
+            pos_to_projects[pos].append(proj)
+
+    return sorted(pos_to_projects.items(), key=lambda x: x[0])
+
+
+def _extract_sections_with_near_merge(full_text: str,
+                                      pos_to_projects: List[Tuple[int, List[str]]],
+                                      min_gap: int = 80) -> List[Tuple[int, int, str]]:
+    """
+    Build sections using near-boundary merging.
+    Returns: [(start_pos, end_pos, canonical_project_name)] duplicated per project.
+    """
+    boundaries = [p for p, _ in pos_to_projects]
+    sections: List[Tuple[int, int, str]] = []
+    i = 0
+    n = len(boundaries)
+    L = len(full_text)
+
+    while i < n:
+        start = boundaries[i]
+        end_next = boundaries[i + 1] if (i + 1) < n else L
+        projs_here = pos_to_projects[i][1]
+
+        if (i + 1) < n and (end_next - start) < min_gap:
+            # merge to third boundary
+            end = boundaries[i + 2] if (i + 2) < n else L
+            # include both i and i+1 projects
+            merged_projects = list(dict.fromkeys(projs_here + pos_to_projects[i + 1][1]))
+            text_slice = full_text[start:end].strip()
+            if text_slice:
+                for p in merged_projects:
+                    sections.append((start, end, p))
+            i += 2
+        else:
+            end = end_next
+            text_slice = full_text[start:end].strip()
+            if text_slice:
+                for p in projs_here:
+                    sections.append((start, end, p))
+            i += 1
+
+    return sections
+
+
+# ------------------------------ main parser (unchanged signature/output) ------------------------------
+
+def parse_docx_rows(file: UploadFile, cw_label: str, category: str) -> list[dict]:
+    """
+    Enhanced project-aware parser that identifies project sections and aggregates text by project.
+    Signature & return type unchanged. Adds 'source_text' (same as 'summary') to each row.
+    """
+    rows: list[dict] = []
+
+    # Attempt to read DOCX
+    try:
+        # reset pointer if needed
+        try:
+            file.file.seek(0)
+        except Exception:
+            pass
+        document = Document(file.file)
+    except Exception as e:
+        logger.warning(f"DOCX parsing failed: {e}")
+        rows.append({
+            "category": category,
+            "entry_type": "Report",
+            "cw_label": cw_label,
+            "title": None,
+            "summary": "",
+            "source_text": "",
+            "next_actions": None,
+            "owner": None,
+            "attachment_url": None,
+        })
+        return rows
+
+    # Build knowledge base (projects + clusters)
+    project_names, cluster_to_projects = _load_kb_from_csv()
+    if not project_names:
+        logger.warning("No active projects loaded from CSV; falling back to raw summary.")
+    project_set = set(project_names)
+
+    # Collect plain text lines from paragraphs and tables
+    all_lines: list[str] = []
+    for p in document.paragraphs:
+        t = (p.text or "").strip()
+        if t:
+            all_lines.append(t)
+    for table in document.tables:
+        for row in table.rows:
+            cells = [(cell.text or "").strip() for cell in row.cells]
+            cells = [c for c in cells if c]
+            if cells:
+                all_lines.append(" | ".join(cells))
+
+    if not all_lines:
+        rows.append({
+            "category": category,
+            "entry_type": "Report",
+            "cw_label": cw_label,
+            "title": None,
+            "summary": "",
+            "source_text": "",
+            "next_actions": None,
+            "owner": None,
+            "attachment_url": None,
+        })
+        return rows
+
+    full_text = "\n".join(all_lines)
+
+    # (1) Mentions via alias matching
+    alias_mentions, alias_unmatched = _find_alias_mentions(full_text, project_names, cluster_to_projects)
+
+    # (2) Mentions via generic capacity patterns
+    generic_mentions, low_conf = _find_generic_pattern_mentions(full_text, project_names, cluster_to_projects)
+
+    mentions = alias_mentions + generic_mentions
+    if not mentions:
+        logger.info("No project-like mentions detected; emitting single summary row.")
+
+    # Log unmatched project-like names (for troubleshooting, keeping I/O unchanged)
+    if alias_unmatched or low_conf:
+        logger.info(
+            "Unmatched/low-confidence mentions (count=%d): %s",
+            len(alias_unmatched) + len(low_conf),
+            [m if isinstance(m, str) else m[0] for m in alias_unmatched + [x[0] for x in low_conf]]
+        )
+
+    # (3) Deduplicate and pack to pos->projects
+    pos_to_projects = _dedupe_and_pack(mentions)
+
+    # (4) Section extraction with near-boundary merge
+    sections = _extract_sections_with_near_merge(full_text, pos_to_projects, min_gap=80)
+
+    # (5) Build output rows
+    for start, end, pname in sections:
+        # Final guard: keep only names that exist in CSV (precision)
+        if pname not in project_set:
+            # map back using best fuzzy; discard if still not in set
+            best = process.extractOne(pname, project_names, scorer=fuzz.token_set_ratio)
+            if not best or best[1] < 86:
+                continue
+            pname = best[0]
+
+        section_text = full_text[start:end].strip()
+        if not section_text:
+            continue
+
+        rows.append({
+            "category": category,
+            "entry_type": "Report",
+            "cw_label": cw_label,
+            "title": f"{pname} - {cw_label}",
+            "summary": section_text,
+            "source_text": section_text,   # <-- added as requested
+            "next_actions": None,
+            "owner": None,
+            "attachment_url": None,
+        })
+
+    # Fallback: if no section rows, emit one summary row
+    if not rows:
+        raw_summary = full_text.strip()
+        rows.append({
+            "category": category,
+            "entry_type": "Report",
+            "cw_label": cw_label,
+            "title": None,
+            "summary": raw_summary,
+            "source_text": raw_summary,
+            "next_actions": None,
+            "owner": None,
+            "attachment_url": None,
+        })
+
+    return rows
+
+
+# ------------------------------ optional DB helpers (unchanged) ------------------------------
 
 def get_project_code_by_name(project_name: str) -> Optional[str]:
-    """Return project_code for a given project_name using CSV mapping.
-
-    Performs case-insensitive lookup after stripping whitespace. Returns None if not found.
-    """
+    """Return project_code for a given project_name using CSV mapping (case-insensitive)."""
     if not project_name:
         return None
     name_key = project_name.strip().lower()
     mapping = load_project_name_to_code_mapping()
     return mapping.get(name_key)
-
 
 def get_project_code_by_name_db(db, project_name: str) -> Optional[str]:
     """Lookup project_code by project_name in the database (status=1 only)."""
@@ -590,19 +533,13 @@ def get_project_code_by_name_db(db, project_name: str) -> Optional[str]:
     ).first()
     return rec.project_code if rec else None
 
-
 def seed_projects_from_csv(db, csv_path: Optional[Path] = None, created_by: str = "sys") -> int:
-    """Idempotently load projects from CSV into the `projects` table.
-
-    - Inserts or updates rows by `project_code` unique constraint.
-    - Returns number of upserts attempted.
-    """
+    """Idempotently load projects from CSV into the `projects` table (unchanged)."""
     path = csv_path or _default_project_csv_path()
     if not path.exists():
         return 0
 
     upserts = 0
-    # Try different encodings to handle special characters
     for encoding in ["utf-8", "latin-1", "cp1252"]:
         try:
             with path.open("r", encoding=encoding) as f:
@@ -643,9 +580,9 @@ def seed_projects_from_csv(db, csv_path: Optional[Path] = None, created_by: str 
                         },
                     )
                     upserts += 1
-            break  # Successfully processed with this encoding
+            break
         except UnicodeDecodeError:
-            continue  # Try next encoding
-    
+            continue
+
     db.commit()
     return upserts
