@@ -1,4 +1,4 @@
-const BASE_URL = (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL) || "http://localhost:8002/api";
+const BASE_URL = (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL) || "http://localhost:8000/api";
 
 export interface BulkUploadOkItem {
   fileName: string;
@@ -148,13 +148,65 @@ export interface PersistUploadResponse {
   status: "persisted";
 }
 
-export async function persistUpload(file: File, useLlm: boolean = false): Promise<PersistUploadResponse> {
+export interface DuplicateFileResponse {
+  status: "duplicate_detected";
+  message: string;
+  isDuplicate: true;
+  existingFile: {
+    id: string;
+    filename: string;
+    uploadedAt: string;
+    status: string;
+  };
+  currentFile: {
+    filename: string;
+    sha256: string;
+  };
+}
+
+export interface CheckDuplicateResponse {
+  isDuplicate: boolean;
+  existingFile?: {
+    id: string;
+    filename: string;
+    uploadedAt: string;
+    status: string;
+  };
+  currentFile: {
+    filename: string;
+    sha256: string;
+  };
+}
+
+export async function checkDuplicate(file: File): Promise<CheckDuplicateResponse> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  
+  const url = `${BASE_URL.replace(/\/$/, "")}/reports/upload/check-duplicate`;
+  
+  const res = await fetch(url, {
+    method: "POST",
+    body: form,
+  });
+  
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Check duplicate failed: ${res.status} ${text}`);
+  }
+  
+  return (await res.json()) as CheckDuplicateResponse;
+}
+
+export async function persistUpload(file: File, useLlm: boolean = false, forceImport: boolean = false): Promise<PersistUploadResponse | DuplicateFileResponse> {
   const form = new FormData();
   form.append("file", file, file.name);
   
   const url = new URL(`${BASE_URL.replace(/\/$/, "")}/reports/upload/persist`);
   if (useLlm) {
     url.searchParams.set("use_llm", "true");
+  }
+  if (forceImport) {
+    url.searchParams.set("force_import", "true");
   }
   
   const res = await fetch(url.toString(), {
@@ -167,7 +219,14 @@ export async function persistUpload(file: File, useLlm: boolean = false): Promis
     throw new Error(`Persist upload failed: ${res.status} ${text}`);
   }
   
-  return (await res.json()) as PersistUploadResponse;
+  const result = await res.json();
+  
+  // Check if it's a duplicate detection response
+  if (result.status === "duplicate_detected") {
+    return result as DuplicateFileResponse;
+  }
+  
+  return result as PersistUploadResponse;
 }
 
 export interface ReportUpload {

@@ -10,6 +10,8 @@ import { Progress } from "@/components/ui/progress"
 import { Input } from "@/components/ui/input"
 import { FileText, Play, Square, Download, ArrowUpDown, ChevronUp, ChevronDown, MessageSquare, X } from "lucide-react"
 import { useLanguage } from "@/hooks/use-language"
+import { analysisService } from "@/lib/api/analysis"
+import { useToast } from "@/hooks/use-toast"
 
 interface AnalysisResult {
   projectCode: string
@@ -27,32 +29,7 @@ interface AnalysisResult {
 type SortField = "projectCode" | "projectName" | "riskLevel" | "similarity" | "negativeWords"
 type SortDirection = "asc" | "desc"
 
-const sampleAnalysisResults: AnalysisResult[] = [
-  {
-    projectCode: "2ES00006",
-    projectName: "Don_Rodrigo_PV",
-    category: "EPC",
-    pastReportContent: "Project progressing well with minor delays in equipment delivery.",
-    latestReportContent: "Significant delays in equipment delivery causing project timeline concerns.",
-    riskLevel: 75,
-    riskOpinion: "High risk due to equipment delays",
-    similarity: 45,
-    similarityOpinion: "Content shows significant changes",
-    negativeWords: ["delays", "concerns", "significant"],
-  },
-  {
-    projectCode: "2ES00009",
-    projectName: "Boedo 1",
-    category: "Finance",
-    pastReportContent: "Budget on track, all financial milestones met.",
-    latestReportContent: "Budget slightly over, but within acceptable range.",
-    riskLevel: 25,
-    riskOpinion: "Low risk, minor budget variance",
-    similarity: 80,
-    similarityOpinion: "Content is mostly consistent",
-    negativeWords: ["over"],
-  },
-]
+// Mock data removed - now using real API
 
 export function WeeklyReport() {
   const { t } = useLanguage()
@@ -62,6 +39,7 @@ export function WeeklyReport() {
   const [pastWeek, setPastWeek] = useState<string>("")
   const [latestYear, setLatestYear] = useState<string>("")
   const [latestWeek, setLatestWeek] = useState<string>("")
+  const [selectedCategory, setSelectedCategory] = useState<string>("all")
 
   // Analysis states
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -76,9 +54,19 @@ export function WeeklyReport() {
   const [isAskAIOpen, setIsAskAIOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<"challenges" | "consistency" | "risks">("challenges")
   const [aiQuestion, setAiQuestion] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  
+  const { toast } = useToast()
 
   const currentYear = new Date().getFullYear()
   const years = Array.from({ length: currentYear - 2024 + 1 }, (_, i) => 2024 + i)
+  const categories = [
+    { value: "all", label: "All Categories" },
+    { value: "Development", label: "Development" },
+    { value: "EPC", label: "EPC" },
+    { value: "Finance", label: "Finance" },
+    { value: "Investment", label: "Investment" }
+  ]
 
   const getCurrentWeek = () => {
     const now = new Date()
@@ -88,7 +76,7 @@ export function WeeklyReport() {
     return Math.min(weekNumber, 52)
   }
 
-  const getWeeksForYear = (year: number) => {
+  const getWeeksForYear = (_year: number) => {
     const weeks = []
     for (let i = 1; i <= 52; i++) {
       weeks.push(`CW${i.toString().padStart(2, "0")}`)
@@ -111,6 +99,32 @@ export function WeeklyReport() {
     }
   }, [currentYear])
 
+  // Load existing analysis results when CW selection changes
+  useEffect(() => {
+    const loadExistingResults = async () => {
+      if (!pastWeek || !latestWeek) return
+
+      try {
+        const categoryFilter = selectedCategory && selectedCategory !== "all" ? selectedCategory : undefined
+        const results = await analysisService.getAnalysisResultsFormatted(
+          pastWeek, 
+          latestWeek, 
+          "EN", // Default language
+          categoryFilter as "Development" | "EPC" | "Finance" | "Investment" | undefined
+        )
+        if (results.length > 0) {
+          setAnalysisResults(results)
+          setHasAnalyzed(true)
+        }
+      } catch (error) {
+        // Silently fail - this is just loading existing results
+        console.log("No existing results found:", error)
+      }
+    }
+
+    void loadExistingResults()
+  }, [pastWeek, latestWeek, selectedCategory])
+
   const canStartAnalysis = pastYear && pastWeek && latestYear && latestWeek
 
   const startAnalysis = async () => {
@@ -119,16 +133,68 @@ export function WeeklyReport() {
     setIsAnalyzing(true)
     setAnalysisProgress(0)
     setAnalysisResults([])
+    setError(null)
 
-    const totalProjects = sampleAnalysisResults.length
-    for (let i = 0; i < totalProjects; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-      setAnalysisProgress(((i + 1) / totalProjects) * 100)
-      setAnalysisResults((prev) => [...prev, sampleAnalysisResults[i]])
+    try {
+      // First, get candidate projects to show progress
+      const categoryFilter = selectedCategory && selectedCategory !== "all" ? selectedCategory : undefined
+      const candidates = await analysisService.getProjectCandidates(
+        pastWeek, 
+        latestWeek, 
+        categoryFilter as "Development" | "EPC" | "Finance" | "Investment" | undefined
+      )
+      const totalProjects = candidates.length
+
+      if (totalProjects === 0) {
+        toast({
+          title: "No Projects Found",
+          description: "No projects found for the selected calendar weeks.",
+          variant: "destructive",
+        })
+        setIsAnalyzing(false)
+        return
+      }
+
+      // Start analysis
+      setAnalysisProgress(20) // Show initial progress
+
+      const response = await analysisService.analyzeReports({
+        past_cw: pastWeek,
+        latest_cw: latestWeek,
+        language: "EN", // Could be made configurable
+        category: categoryFilter as "Development" | "EPC" | "Finance" | "Investment" | undefined,
+        created_by: "frontend-user"
+      })
+
+      setAnalysisProgress(80)
+
+      // Convert results to frontend format
+      const formattedResults = response.results.map(result => 
+        analysisService.convertToFrontendFormat(result)
+      )
+
+      setAnalysisResults(formattedResults)
+      setAnalysisProgress(100)
+
+      toast({
+        title: "Analysis Complete",
+        description: response.message,
+      })
+
+      setHasAnalyzed(true)
+    } catch (error) {
+      console.error("Analysis failed:", error)
+      const errorMessage = error instanceof Error ? error.message : "Analysis failed"
+      setError(errorMessage)
+      
+      toast({
+        title: "Analysis Failed",
+        description: errorMessage,
+        variant: "destructive",
+      })
+    } finally {
+      setIsAnalyzing(false)
     }
-
-    setIsAnalyzing(false)
-    setHasAnalyzed(true)
   }
 
   const stopAnalysis = () => {
@@ -244,8 +310,28 @@ export function WeeklyReport() {
           <CardTitle className="text-xl text-primary">{t("selectReportsForAnalysis")}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-12">
-            {/* Past Report Selection */}
+          <div className="space-y-6">
+            {/* Category Selection */}
+            <div className="space-y-3">
+              <h3 className="text-lg font-semibold text-black dark:text-white">Category Filter</h3>
+              <div className="max-w-md">
+                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select category (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((category) => (
+                      <SelectItem key={category.value} value={category.value}>
+                        {category.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="flex gap-12">
+              {/* Past Report Selection */}
             <div className="space-y-3">
               <h3 className="text-lg font-semibold text-black dark:text-white">{t("pastReport")}</h3>
               <div className="grid grid-cols-2 gap-4 max-w-md">
@@ -320,6 +406,7 @@ export function WeeklyReport() {
                 </div>
               </div>
             </div>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -372,10 +459,28 @@ export function WeeklyReport() {
         </Card>
       )}
 
+      {/* Error Display */}
+      {error && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="p-4">
+            <div className="text-red-700">
+              <strong>Error:</strong> {error}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Analysis Results */}
       {analysisResults.length > 0 && (
         <div className="space-y-4">
-          <h2 className="text-xl font-semibold">{t("analysisResults")}</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold">{t("analysisResults")}</h2>
+            <div className="text-sm text-muted-foreground">
+              {selectedCategory && selectedCategory !== "all" ? `Category: ${selectedCategory}` : "All Categories"} | 
+              {pastWeek} → {latestWeek} | 
+              {analysisResults.length} projects analyzed
+            </div>
+          </div>
 
           {/* Results Table */}
           <div className="border rounded-lg overflow-hidden">
@@ -406,7 +511,7 @@ export function WeeklyReport() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedResults.map((result, index) => (
+                  {sortedResults.map((result, _index) => (
                     <tr key={result.projectCode} className="border-t hover:bg-muted/50">
                       <td className="p-3 font-mono text-sm">{result.projectCode}</td>
                       <td className="p-3 font-medium">{result.projectName}</td>

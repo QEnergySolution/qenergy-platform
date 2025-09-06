@@ -95,12 +95,12 @@ def test_migrations_apply_and_schema_constraints():
             except Exception:
                 conn.rollback()
 
-            # weekly_report_analysis unique (project_code, cw_label, language)
-            conn.execute(text("INSERT INTO weekly_report_analysis (project_code, cw_label, language, created_by) VALUES ('P001','CW02','EN','sys')"))
+            # weekly_report_analysis unique (project_code, cw_label, language, category)
+            conn.execute(text("INSERT INTO weekly_report_analysis (project_code, cw_label, language, category, created_by) VALUES ('P001','CW02','EN','Development','sys')"))
             conn.commit()
             try:
-                conn.execute(text("INSERT INTO weekly_report_analysis (project_code, cw_label, language, created_by) VALUES ('P001','CW02','EN','sys')"))
+                conn.execute(text("INSERT INTO weekly_report_analysis (project_code, cw_label, language, category, created_by) VALUES ('P001','CW02','EN','Development','sys')"))
                 conn.commit()
-                assert False, "should violate unique(project_code, cw_label, language)"
+                assert False, "should violate unique(project_code, cw_label, language, category)"
             except Exception:
                 conn.rollback()

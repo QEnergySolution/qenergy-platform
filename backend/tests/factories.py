@@ -36,5 +36,6 @@ class WeeklyReportAnalysisFactory(factory.Factory):
     project_code = factory.LazyAttribute(lambda _: fake.unique.bothify(text="P####"))
     cw_label = "CW02"
     language = "EN"
+    category = "Development"
     created_by = "test"
 

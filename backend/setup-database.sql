@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS weekly_report_analysis (
     negative_words JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_by VARCHAR(255) NOT NULL,
-    UNIQUE(project_code, cw_label, language)
+    UNIQUE(project_code, cw_label, language, category)
 );
 
 -- Create indexes for performance

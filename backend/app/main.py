@@ -1,5 +1,5 @@
-from fastapi import FastAPI, Depends, File, UploadFile, Query
-from typing import Optional
+from fastapi import FastAPI, Depends, File, UploadFile, Query, HTTPException
+from typing import Optional, List
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy import text
@@ -11,6 +11,7 @@ import tempfile
 import os
 import logging
 import json
+import hashlib
 
 from .database import get_db
 from .task_queue import task_queue, TaskStatus, TaskStep
@@ -341,8 +342,8 @@ async def upload_single(
     
     try:
         year, cw_label, category_raw, category = parse_filename(filename)
-    except ValueError:
-        return _error("INVALID_NAME", "Filename must match YYYY_CW##_{DEV|EPC|FINANCE|INVESTMENT}.docx")
+    except ValueError as e:
+        return _error("INVALID_NAME", f"Filename '{filename}' must contain a calendar week (e.g., CW01) and category (DEV, EPC, FINANCE, or INVESTMENT). Details: {str(e)}")
     
     # Create task for tracking
     task_id = task_queue.create_task(filename, use_llm)
@@ -502,10 +503,61 @@ async def upload_single(
         return _error("PROCESSING_FAILED", f"Failed to process {filename}: {str(e)}")
 
 
+@app.post("/api/reports/upload/check-duplicate")
+async def check_duplicate_file(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Check if a file already exists in the database by SHA256 hash
+    """
+    filename = file.filename or ""
+    if not filename.lower().endswith(".docx"):
+        return _error("UNSUPPORTED_TYPE", "Only .docx is supported")
+    
+    try:
+        # Calculate file hash
+        content = await file.read()
+        sha256_hash = hashlib.sha256(content).hexdigest()
+        
+        # Check if upload already exists by SHA256
+        existing = db.execute(
+            text("SELECT id, original_filename, uploaded_at, status FROM report_uploads WHERE sha256 = :sha256"),
+            {"sha256": sha256_hash}
+        ).first()
+        
+        if existing:
+            return {
+                "isDuplicate": True,
+                "existingFile": {
+                    "id": existing.id,
+                    "filename": existing.original_filename,
+                    "uploadedAt": existing.uploaded_at.isoformat(),
+                    "status": existing.status
+                },
+                "currentFile": {
+                    "filename": filename,
+                    "sha256": sha256_hash
+                }
+            }
+        else:
+            return {
+                "isDuplicate": False,
+                "currentFile": {
+                    "filename": filename,
+                    "sha256": sha256_hash
+                }
+            }
+    except Exception as e:
+        logger.error(f"Failed to check duplicate for {filename}: {e}")
+        return _error("CHECK_FAILED", f"Failed to check duplicate: {str(e)}")
+
+
 @app.post("/api/reports/upload/persist")
 async def persist_upload_to_database(
     file: UploadFile = File(...),
     use_llm: bool = Query(False, description="Use LLM parser for advanced extraction"),
+    force_import: bool = Query(False, description="Force import even if file already exists"),
     db: Session = Depends(get_db)
 ):
     """
@@ -519,7 +571,37 @@ async def persist_upload_to_database(
         year, cw_label, category_raw, category = parse_filename(filename)
     except ValueError as e:
         logger.error(f"Failed to parse filename '{filename}': {e}")
-        return _error("INVALID_NAME", f"Filename '{filename}' must match YYYY_CW##_{{DEV|EPC|FINANCE|INVESTMENT}}.docx")
+        return _error("INVALID_NAME", f"Filename '{filename}' must contain a calendar week (e.g., CW01) and category (DEV, EPC, FINANCE, or INVESTMENT). Details: {str(e)}")
+    
+    # Check for duplicate file if not forcing import
+    if not force_import:
+        content = await file.read()
+        sha256_hash = hashlib.sha256(content).hexdigest()
+        
+        existing = db.execute(
+            text("SELECT id, original_filename, uploaded_at, status FROM report_uploads WHERE sha256 = :sha256"),
+            {"sha256": sha256_hash}
+        ).first()
+        
+        if existing:
+            return {
+                "status": "duplicate_detected",
+                "message": f"file '{filename}' has been imported",
+                "isDuplicate": True,
+                "existingFile": {
+                    "id": existing.id,
+                    "filename": existing.original_filename,
+                    "uploadedAt": existing.uploaded_at.isoformat(),
+                    "status": existing.status
+                },
+                "currentFile": {
+                    "filename": filename,
+                    "sha256": sha256_hash
+                }
+            }
+        
+        # Reset file position for later processing
+        await file.seek(0)
     
     # Create task for tracking
     task_id = task_queue.create_task(filename, use_llm)
@@ -563,7 +645,8 @@ async def persist_upload_to_database(
                         file_path=tmp_file.name,
                         original_filename=filename,
                         project_code_mapper=db_mapper,
-                        created_by="web_user"
+                        created_by="web_user",
+                        force_import=force_import
                     )
                 else:
                     # Simple parsing path delegated to importer
@@ -573,6 +656,7 @@ async def persist_upload_to_database(
                         file_path=tmp_file.name,
                         original_filename=filename,
                         created_by="web_user",
+                        force_import=force_import
                     )
                 
                 # Update progress: completion
@@ -631,11 +715,11 @@ async def upload_bulk(
             continue
         try:
             year, cw_label, category_raw, category = parse_filename(name)
-        except ValueError:
+        except ValueError as e:
             results.append({
                 "fileName": name,
                 "status": "error",
-                "errors": [{"code": "INVALID_NAME", "message": "Filename must match YYYY_CW##_{DEV|EPC|FINANCE|INVESTMENT}.docx"}],
+                "errors": [{"code": "INVALID_NAME", "message": f"Filename '{name}' must contain a calendar week (e.g., CW01) and category (DEV, EPC, FINANCE, or INVESTMENT). Details: {str(e)}"}],
             })
             continue
         
@@ -713,6 +797,117 @@ async def upload_bulk(
         "parsedWith": "llm" if use_llm else "simple"
     }
     return {"results": results, "summary": summary}
+
+
+# Analysis endpoints for Phase 2D
+from .services.analysis_service import AnalysisService
+from .schemas.analysis import (
+    AnalysisRequest, AnalysisResponse, ProjectCandidateResponse, 
+    WeeklyReportAnalysisRead, Language, Category
+)
+
+analysis_service = AnalysisService()
+
+@app.post("/api/reports/analyze", response_model=AnalysisResponse)
+async def analyze_reports(
+    request: AnalysisRequest,
+    db: Session = Depends(get_db)
+):
+    """Trigger sync analysis for reports between two calendar weeks"""
+    try:
+        # Get candidate projects
+        candidates = analysis_service.get_projects_by_cw_pair(
+            db, request.past_cw, request.latest_cw, request.category
+        )
+        
+        if not candidates:
+            return AnalysisResponse(
+                message="No projects found for the specified calendar weeks",
+                analyzed_count=0,
+                skipped_count=0,
+                results=[]
+            )
+        
+        analyzed_count = 0
+        skipped_count = 0
+        results = []
+        
+        # Analyze each project
+        for candidate in candidates:
+            try:
+                analysis, was_created = await analysis_service.analyze_project_pair(
+                    db=db,
+                    project_code=candidate["project_code"],
+                    past_cw=request.past_cw,
+                    latest_cw=request.latest_cw,
+                    language=request.language,
+                    category=request.category,
+                    created_by=request.created_by
+                )
+                
+                results.append(analysis)
+                if was_created:
+                    analyzed_count += 1
+                else:
+                    skipped_count += 1
+                    
+            except Exception as e:
+                logger.error(f"Failed to analyze {candidate['project_code']}: {e}")
+                skipped_count += 1
+        
+        return AnalysisResponse(
+            message=f"Analysis completed: {analyzed_count} new, {skipped_count} cached/skipped",
+            analyzed_count=analyzed_count,
+            skipped_count=skipped_count,
+            results=results
+        )
+        
+    except Exception as e:
+        logger.error(f"Analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+@app.get("/api/weekly-analysis", response_model=List[WeeklyReportAnalysisRead])
+def get_weekly_analysis(
+    past_cw: str = Query(..., description="Past calendar week (e.g., CW31)"),
+    latest_cw: str = Query(..., description="Latest calendar week (e.g., CW32)"),
+    language: Optional[Language] = Query(None, description="Filter by language"),
+    category: Optional[Category] = Query(None, description="Filter by category"),
+    db: Session = Depends(get_db)
+):
+    """List existing analysis results"""
+    try:
+        results = analysis_service.get_analysis_results(
+            db, past_cw, latest_cw, language, category
+        )
+        return results
+    except Exception as e:
+        logger.error(f"Failed to get analysis results: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get analysis results: {str(e)}")
+
+
+@app.get("/api/projects/by-cw-pair", response_model=List[ProjectCandidateResponse])
+def get_projects_by_cw_pair(
+    past_cw: str = Query(..., description="Past calendar week (e.g., CW31)"),
+    latest_cw: str = Query(..., description="Latest calendar week (e.g., CW32)"),
+    category: Optional[Category] = Query(None, description="Filter by category"),
+    db: Session = Depends(get_db)
+):
+    """List candidate projects present in either calendar week"""
+    try:
+        candidates = analysis_service.get_projects_by_cw_pair(db, past_cw, latest_cw, category)
+        return [
+            ProjectCandidateResponse(
+                project_code=candidate["project_code"],
+                project_name=candidate["project_name"],
+                categories=candidate["categories"],
+                cw_labels=candidate["cw_labels"]
+            )
+            for candidate in candidates
+        ]
+    except Exception as e:
+        logger.error(f"Failed to get project candidates: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get project candidates: {str(e)}")
 
 
 # Moved to utils.py

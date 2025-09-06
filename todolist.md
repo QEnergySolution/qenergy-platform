@@ -76,7 +76,7 @@ Goal: Establish minimal, correct data layer for reports and analysis.
   - Alembic baseline + first migration reflecting current schema
 - [x] Indexes & Constraints — 2025-08-26
   - `projects.project_code` UNIQUE
-  - `weekly_report_analysis UNIQUE(project_code, cw_label, language)` + composite read index
+  - `weekly_report_analysis UNIQUE(project_code, cw_label, language, category)` + composite read index
   - Range/read indexes for `project_history` (project_code, cw_label)
   - CHECK constraint for `project_history.category` (enum: Development, EPC, Finance, Investment)
   - Optional: add `updated_at/updated_by` to `weekly_report_analysis` if updates are expected
@@ -129,7 +129,7 @@ Acceptance for Phase 2A:
 - [x] Verified: 12,711 char doc → 27 rows extracted; log includes smart allocation
 
 #### 2B7 - Folder → DB Orchestrator
-- [ ] Process only `.docx` matching filename pattern; archive to `REPORT_UPLOAD_ARCHIVE_DIR/{year}/{cw}/{category}/...`; set `attachment_url`
+- [x] Process only `.docx` matching filename pattern; archive to `REPORT_UPLOAD_ARCHIVE_DIR/{year}/{cw}/{category}/...`; set `attachment_url`
 - [x] Project mapping: establish truth source (`project_name → project_code` via CSV/DB); load+cache; unresolved flagged — 2025-08-29
   - Implemented CSV-backed loader `backend/app/utils.py:get_project_code_by_name`
   - Replaced keyword mapper in `backend/app/main.py` with CSV mapper
@@ -182,21 +182,32 @@ Acceptance for Phase 2C:
 
 ### P0 Phase 2D — Analysis Core (Sync) + Results Listing
 Goal: Run basic analysis (sync/small batches) and list results.
+
 - [ ] Backend: Analysis Core
-  - `POST /api/reports/analyze` (trigger sync analysis)
-  - `GET /api/weekly-analysis?past_cw&latest_cw&language` (list)
-  - `GET /api/projects/by-cw-pair?past_cw&latest_cw` (list candidate projects present in either CW)
-  - Compute: risk level, similarity, negative words; persist to `weekly_report_analysis`
-  - Simple cache reuse (skip unchanged via timestamps/hash)
-  - LLM client wiring (Azure OpenAI): env `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`; retries and 429 backoff
-  - Data source for by-cw-pair endpoint: derive from `project_history` existence in either CW
+  - Endpoints  
+    - `POST /api/reports/analyze` → trigger sync analysis  
+    - `GET /api/weekly-analysis?past_cw&latest_cw&language&category` → list results  
+    - `GET /api/projects/by-cw-pair?past_cw&latest_cw` → list candidate projects (present in either CW)  
+  - Pipeline  
+    - Clean mocked data  
+    - Data fetch: `(project_code, category, cw_label)` → from `project_history`  
+    - Uniqueness check: skip if already analyzed → return existing and continue  
+    - Info extraction (lang detect, keywords/neg words, struct: issue/risk/dependency/progress/blocker)  
+    - Features: local embeddings (semantic vec), intra-week aggregation, inter-week cosine compare, neg word count, (opt. topic clustering)  
+    - LLM scoring (low temp ≤0.2, strict JSON) → `risk_lvl`, `risk_desc`, `similarity_lvl`, `similarity_desc`  
+    - Persist: `UPSERT` into `weekly_report_analysis`  
+    - Cache reuse: skip unchanged (timestamps/hash)  
+    - LLM client wiring (Azure OpenAI): env `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`; retries + 429 backoff  
+  - Data source for `by-cw-pair` → derive from `project_history` presence in either CW  
+
 - [ ] Frontend: Results Display (MVP)
-  - Charts for risk/similarity; basic table/cards; historical records view
-  - Service layer (`frontend/lib/api/analysis.ts`) + tests
+  - Components: charts (risk/similarity), tables/cards, historical records view  
+  - Service layer: `frontend/lib/api/analysis.ts` + tests  
 
 Acceptance for Phase 2D:
-- Analysis runs and persists for small datasets; results list renders
-- Cache reuse verified on repeat runs; unit/integration tests pass
+- [ ] Analysis runs and persists for small datasets; results list renders  
+- [ ] Cache reuse verified on repeat runs  
+- [ ] Unit + integration tests pass  
 
 ---
 
@@ -416,7 +427,7 @@ CREATE TABLE weekly_report_analysis (
   negative_words JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_by VARCHAR(255) NOT NULL,
-  UNIQUE(project_code, cw_label, language)
+  UNIQUE(project_code, cw_label, language, category)
 );
 ```
 

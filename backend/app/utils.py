@@ -13,7 +13,18 @@ from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
-_FILENAME_RE = re.compile(r"^(?P<year>\d{4})_CW(?P<cw>\d{2})_(?P<cat>DEV|EPC|FINANCE|INVESTMENT)\.docx$", re.IGNORECASE)
+# Legacy strict pattern (kept for reference)
+_FILENAME_RE_STRICT = re.compile(r"^(?P<year>\d{4})_CW(?P<cw>\d{2})_(?P<cat>DEV|EPC|FINANCE|INVESTMENT)\.docx$", re.IGNORECASE)
+
+# Flexible patterns for CW and category extraction
+_CW_PATTERN = re.compile(r"CW(\d{1,2})", re.IGNORECASE)
+_CATEGORY_PATTERNS = [
+    (re.compile(r"(?:^|[^a-zA-Z])(DEV|DEVELOPMENT)(?:[^a-zA-Z]|$)", re.IGNORECASE), "DEV"),
+    (re.compile(r"(?:^|[^a-zA-Z])(EPC)(?:[^a-zA-Z]|$)", re.IGNORECASE), "EPC"),
+    (re.compile(r"(?:^|[^a-zA-Z])(FINANCE|FINANCIAL|FIN)(?:[^a-zA-Z]|$)", re.IGNORECASE), "FINANCE"),
+    (re.compile(r"(?:^|[^a-zA-Z])(INVESTMENT|INVEST|INV)(?:[^a-zA-Z]|$)", re.IGNORECASE), "INVESTMENT"),
+]
+
 _CAT_MAP = {
     "DEV": "Development",
     "EPC": "EPC",
@@ -23,15 +34,63 @@ _CAT_MAP = {
 
 
 def parse_filename(filename: str):
-    """Parse filename to extract year, cw_label and category"""
-    m = _FILENAME_RE.match(filename)
-    if not m:
-        raise ValueError("INVALID_NAME")
-    year = int(m.group("year"))
-    cw_label = f"CW{m.group('cw').upper()}"
-    raw = m.group("cat").upper()
-    category = _CAT_MAP.get(raw, raw)
-    return year, cw_label, raw, category
+    """Parse filename to extract year, cw_label and category.
+    
+    This function is now more flexible and can handle various filename formats
+    as long as they contain:
+    1. A calendar week number (CW##)
+    2. A category (DEV, EPC, FINANCE, INVESTMENT or their variations)
+    
+    Examples of supported formats:
+    - 2025_CW01_DEV.docx (strict format)
+    - Weekly Report_CW16 - DEV.docx
+    - CW01 Development Report.docx
+    - Report CW02 EPC 2025.docx
+    """
+    # Remove .docx extension for parsing
+    name_without_ext = filename.lower()
+    if name_without_ext.endswith('.docx'):
+        name_without_ext = name_without_ext[:-5]
+    
+    # Try strict pattern first (for backward compatibility)
+    strict_match = _FILENAME_RE_STRICT.match(filename)
+    if strict_match:
+        year = int(strict_match.group("year"))
+        cw_label = f"CW{strict_match.group('cw').upper()}"
+        raw = strict_match.group("cat").upper()
+        category = _CAT_MAP.get(raw, raw)
+        return year, cw_label, raw, category
+    
+    # Extract CW number
+    cw_match = _CW_PATTERN.search(filename)
+    if not cw_match:
+        raise ValueError("INVALID_NAME: No calendar week (CW##) found in filename")
+    
+    cw_num = int(cw_match.group(1))
+    cw_label = f"CW{cw_num:02d}"  # Format as CW01, CW02, etc.
+    
+    # Extract category
+    category_raw = None
+    category = None
+    for pattern, cat_raw in _CATEGORY_PATTERNS:
+        if pattern.search(filename):
+            category_raw = cat_raw
+            category = _CAT_MAP.get(cat_raw, cat_raw)
+            break
+    
+    if not category_raw:
+        raise ValueError("INVALID_NAME: No valid category (DEV, EPC, FINANCE, INVESTMENT) found in filename")
+    
+    # Try to extract year (optional, default to current year if not found)
+    year_match = re.search(r"\b(20\d{2})\b", filename)
+    if year_match:
+        year = int(year_match.group(1))
+    else:
+        # Default to current year if no year found in filename
+        from datetime import datetime
+        year = datetime.now().year
+    
+    return year, cw_label, category_raw, category
 
 
 def parse_docx_rows(file: UploadFile, cw_label: str, category: str) -> list[dict]:

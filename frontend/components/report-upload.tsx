@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { Upload, Save, X, CheckCircle, FileText, Brain, Zap, Clock, AlertCircle, Eye, Calendar, User, FolderOpen, RefreshCw } from "lucide-react"
+import { Upload, Save, X, CheckCircle, FileText, Brain, Zap, Clock, AlertCircle, Eye, Calendar, User, FolderOpen, RefreshCw, History, PanelRightClose, PanelRightOpen } from "lucide-react"
 import { useLanguage } from "@/hooks/use-language"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -23,19 +23,20 @@ interface ReportData {
   category: string
   reportContent: string
   cwLabel?: string
-  logDate?: string
-  title?: string
-  nextActions?: string
-  owner?: string
+  logDate?: string | null
+  title?: string | null
+  nextActions?: string | null
+  owner?: string | null
 }
 
 interface UploadResult {
   category: string
   fileName: string
   projectsAdded: number
-  status: "success" | "error"
+  status: "success" | "error" | "pending"
   parsedWith?: "llm" | "simple"
   errors?: { code: string; message: string }[]
+  message?: string
 }
 
 interface TaskProgress {
@@ -49,72 +50,30 @@ interface TaskProgress {
   errorMessage?: string
 }
 
-const sampleReports: ReportData[] = [
-  {
-    projectCode: "2ES00006",
-    projectName: "Don_Rodrigo_PV",
-    category: "EPC",
-    reportContent:
-      "(ESP) Guadajoz / Las Coronadas / Don Rodrigo 157.5Mwp\n(DON)\nPunch List ongoing, and PV plant together with SET are waiting to proceed with Hot commissioning\nTower 21 civil works done, and erection will proceed withing this week\nNCH has started, estimated to finish will be between Oct. and Nov. 2025.",
-  },
-  {
-    projectCode: "2ES00009",
-    projectName: "Boedo 1",
-    category: "Finance",
-    reportContent:
-      "Weekly maintenance completed. All turbines operational at 98% efficiency. Weather conditions favorable for next week operations.",
-  },
-  {
-    projectCode: "2ES00010",
-    projectName: "Boedo 2",
-    category: "DEV",
-    reportContent:
-      "Scheduled inspection performed. Minor repairs needed on turbine 3. Expected completion by end of week.",
-  },
-  {
-    projectCode: "2DE00001",
-    projectName: "Illmersdorf",
-    category: "Investment",
-    reportContent:
-      "Solar panel cleaning completed. Energy output increased by 5%. Next maintenance scheduled for next month.",
-  },
-  {
-    projectCode: "2DE00002",
-    projectName: "Garwitz",
-    category: "EPC",
-    reportContent: "Weather monitoring system updated. New sensors installed. Data collection improved significantly.",
-  },
-  {
-    projectCode: "2DE00003",
-    projectName: "Matzlow",
-    category: "Finance",
-    reportContent: "Quarterly safety inspection passed. All systems within normal parameters. Team training completed.",
-  },
-  {
-    projectCode: "2DE00004",
-    projectName: "IM 24 Tangerhütte",
-    category: "DEV",
-    reportContent: "Grid connection testing in progress. Expected completion next week. All preliminary tests passed.",
-  },
-  {
-    projectCode: "2DE00005",
-    projectName: "IM 07 Blankensee",
-    category: "Investment",
-    reportContent:
-      "Foundation work completed. Turbine installation scheduled for next phase. Weather conditions monitored.",
-  },
-]
 
 export function ReportUpload() {
   const { t } = useLanguage()
   const [selectedYear, setSelectedYear] = useState<string>("")
   const [selectedWeek, setSelectedWeek] = useState<string>("")
+  const [selectedCategory, setSelectedCategory] = useState<string>("all")
+  const [duplicateFileDialog, setDuplicateFileDialog] = useState<{
+    isOpen: boolean;
+    file: File | null;
+    duplicateInfo: any;
+    category: string;
+    useLlm: boolean;
+  }>({
+    isOpen: false,
+    file: null,
+    duplicateInfo: null,
+    category: "",
+    useLlm: false
+  })
   const [reports, setReports] = useState<ReportData[]>([])
   const [isLoadingReports, setIsLoadingReports] = useState(false)
   const [actualLoadedYear, setActualLoadedYear] = useState<string>("")
   const [actualLoadedWeek, setActualLoadedWeek] = useState<string>("")
   const [isSaving, setIsSaving] = useState(false)
-  const [isUploadDrawerOpen, setIsUploadDrawerOpen] = useState(false)
   const [uploadFiles, setUploadFiles] = useState<{ [key: string]: File | null }>({
     DEV: null,
     EPC: null,
@@ -125,7 +84,7 @@ export function ReportUpload() {
   const [isUploading, setIsUploading] = useState(false)
   const [bulkFiles, setBulkFiles] = useState<File[]>([])
   const [useLlmParser, setUseLlmParser] = useState(false)
-  const [processingStatus, setProcessingStatus] = useState<{ [fileName: string]: "processing" | "complete" | "error" }>({})
+  const [processingStatus, setProcessingStatus] = useState<{ [fileName: string]: "processing" | "complete" | "error" | "pending" | "cancelled" }>({})
   const [taskProgresses, setTaskProgresses] = useState<{ [taskId: string]: TaskProgress }>({})
   const [eventSources, setEventSources] = useState<{ [taskId: string]: EventSource }>({})
   const [persistResults, setPersistResults] = useState<{ [fileName: string]: any }>({})
@@ -134,9 +93,18 @@ export function ReportUpload() {
   const [uploadHistory, setUploadHistory] = useState<any>(null)
   const [isLoadingUploads, setIsLoadingUploads] = useState(false)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<'upload' | 'history'>('upload')
 
   const currentYear = new Date().getFullYear()
   const years = Array.from({ length: currentYear - 2024 + 1 }, (_, i) => 2024 + i)
+  
+  const categories = [
+    { value: "Development", label: "Development" },
+    { value: "EPC", label: "EPC" },
+    { value: "Finance", label: "Finance" },
+    { value: "Investment", label: "Investment" }
+  ]
 
   // Load project history data from database
   const loadProjectHistory = useCallback(async () => {
@@ -148,8 +116,13 @@ export function ReportUpload() {
         year: parseInt(selectedYear),
         cwLabel: selectedWeek
       }
+      
+      // Add category filter if selected (and not "all")
+      if (selectedCategory && selectedCategory !== "all") {
+        filters.category = selectedCategory
+      }
 
-      console.log(`Loading data for ${selectedYear} ${selectedWeek}`)
+      console.log(`Loading data for ${selectedYear} ${selectedWeek}${selectedCategory && selectedCategory !== "all" ? ` (${selectedCategory})` : ''}`)
       const response = await getProjectHistory(filters)
       
       // Transform API response to ReportData format
@@ -178,11 +151,11 @@ export function ReportUpload() {
     } finally {
       setIsLoadingReports(false)
     }
-  }, [selectedYear, selectedWeek])
+  }, [selectedYear, selectedWeek, selectedCategory])
 
   // Load data when year and week are selected
   useEffect(() => {
-    loadProjectHistory()
+    void loadProjectHistory()
   }, [loadProjectHistory])
 
   // Load report uploads
@@ -202,12 +175,20 @@ export function ReportUpload() {
   // Load upload history
   const loadUploadHistory = useCallback(async (uploadId: string) => {
     setIsLoadingHistory(true)
+    setUploadHistory(null) // Reset previous data
+    console.log("🔍 Loading upload history for ID:", uploadId)
+    
     try {
       const { getUploadProjectHistory } = await import("@/lib/api/reports")
+      console.log("📡 Calling getUploadProjectHistory API...")
       const result = await getUploadProjectHistory(uploadId)
+      console.log("✅ Upload history loaded:", result)
+      console.log("📊 Project history records:", result.projectHistory?.length || 0)
       setUploadHistory(result)
     } catch (error) {
-      console.error("Failed to load upload history:", error)
+      console.error("❌ Failed to load upload history:", error)
+      console.error("Error details:", error instanceof Error ? error.message : String(error))
+      setUploadHistory(null)
     } finally {
       setIsLoadingHistory(false)
     }
@@ -338,7 +319,7 @@ export function ReportUpload() {
         if (allResponse.totalRecords > 0 && allResponse.projectHistory.length > 0) {
           // Use the most recent record's date
           const mostRecent = allResponse.projectHistory[0] // API returns sorted by date DESC
-          const logDate = new Date(mostRecent.logDate)
+          const logDate = mostRecent.logDate ? new Date(mostRecent.logDate) : new Date()
           const recentYear = logDate.getFullYear().toString()
           const recentWeek = mostRecent.cwLabel
           
@@ -379,7 +360,8 @@ export function ReportUpload() {
   }
 
   const handleUploadReport = () => {
-    setIsUploadDrawerOpen(true)
+    setActiveTab('upload')
+    setSidebarOpen(true)
     setUploadResults([])
   }
 
@@ -469,8 +451,34 @@ export function ReportUpload() {
           setProcessingStatus(prev => ({ ...prev, [file.name]: "processing" }))
           
           const { persistUpload } = await import("@/lib/api/reports")
-          const res = await persistUpload(file, useLlmParser)
+          const res = await persistUpload(file, useLlmParser, false) // Don't force import initially
           
+          // Check if it's a duplicate file response
+          if (res.status === "duplicate_detected") {
+            // Show confirmation dialog
+            setDuplicateFileDialog({
+              isOpen: true,
+              file: file,
+              duplicateInfo: res,
+              category: category,
+              useLlm: useLlmParser
+            })
+            
+            // Mark as pending (user needs to decide)
+            setProcessingStatus(prev => ({ ...prev, [file.name]: "pending" }))
+            
+            results.push({
+              category: category,
+              fileName: file.name,
+              projectsAdded: 0,
+              status: "pending",
+              parsedWith: "simple",
+              message: res.message
+            })
+            continue
+          }
+          
+          // Normal success flow
           // Start task monitoring
           if (res.taskId) {
             startTaskMonitoring(res.taskId, res.fileName)
@@ -562,6 +570,54 @@ export function ReportUpload() {
     }
   }
 
+  const handleDuplicateConfirm = async (forceImport: boolean) => {
+    const { file, useLlm } = duplicateFileDialog
+    
+    if (!file) return
+    
+    if (forceImport) {
+      try {
+        // Mark as processing again
+        setProcessingStatus(prev => ({ ...prev, [file.name]: "processing" }))
+        
+        const { persistUpload } = await import("@/lib/api/reports")
+        const res = await persistUpload(file, useLlm, true) // Force import
+        
+        // Handle the response (should be successful now)
+        if (res.status !== "duplicate_detected") {
+          // Start task monitoring
+          if (res.taskId) {
+            startTaskMonitoring(res.taskId, res.fileName)
+          }
+          
+          // Store persist result
+          setPersistResults(prev => ({ ...prev, [file.name]: res }))
+          
+          // Mark as complete
+          setProcessingStatus(prev => ({ ...prev, [file.name]: "complete" }))
+          
+          // Refresh uploads table
+          void loadReportUploads()
+        }
+      } catch (e) {
+        console.error(`Force import failed for ${file.name}:`, e)
+        setProcessingStatus(prev => ({ ...prev, [file.name]: "error" }))
+      }
+    } else {
+      // User chose not to import, mark as cancelled
+      setProcessingStatus(prev => ({ ...prev, [file.name]: "cancelled" }))
+    }
+    
+    // Close dialog
+    setDuplicateFileDialog({
+      isOpen: false,
+      file: null,
+      duplicateInfo: null,
+      category: "",
+      useLlm: false
+    })
+  }
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -572,8 +628,23 @@ export function ReportUpload() {
         </h1>
         <div className="flex gap-2">
           <Button
-            onClick={handleUploadReport}
-            className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105"
+            onClick={() => {
+              setActiveTab('history')
+              setSidebarOpen(true)
+              void loadReportUploads()
+            }}
+            variant="outline"
+            size="lg"
+          >
+            <History className="w-4 h-4 mr-2" />
+            report upload history
+          </Button>
+          <Button
+            onClick={() => {
+              setActiveTab('upload')
+              setSidebarOpen(true)
+            }}
+            className="bg-green-600 hover:bg-green-700 text-white shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105"
             size="lg"
           >
             <Upload className="w-4 h-4 mr-2" />
@@ -582,7 +653,8 @@ export function ReportUpload() {
           <Button
             onClick={handleSaveAllReports}
             disabled={isSaving}
-            className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105"
+            variant="outline"
+            className="border-green-600 text-green-600 hover:bg-green-50 hover:border-green-700 hover:text-green-700 transition-all duration-200"
             size="lg"
           >
             <Save className="w-4 h-4 mr-2" />
@@ -597,7 +669,7 @@ export function ReportUpload() {
           <CardTitle className="text-xl text-primary">{t("selectReportPeriod")}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-6 max-w-md">
+          <div className="grid grid-cols-3 gap-6 max-w-2xl">
             <div>
               <label className="block text-sm font-medium mb-2 text-black dark:text-white">{t("year")}</label>
               <Select value={selectedYear} onValueChange={setSelectedYear}>
@@ -626,6 +698,24 @@ export function ReportUpload() {
                         {week}
                       </SelectItem>
                     ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2 text-black dark:text-white">{t("category")}</label>
+              <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder={t("selectCategory")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">
+                    {t("allCategories")}
+                  </SelectItem>
+                  {categories.map((category) => (
+                    <SelectItem key={category.value} value={category.value}>
+                      {category.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -716,34 +806,80 @@ export function ReportUpload() {
         </CardContent>
       </Card>
 
+      {/* Unified Sidebar */}
       {/* Backdrop */}
-      {isUploadDrawerOpen && (
+      {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-40 transition-opacity duration-300"
-          onClick={() => setIsUploadDrawerOpen(false)}
+          onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      {/* Drawer */}
+      {/* Sidebar */}
       <div
-        className={`fixed top-0 right-0 h-full w-[90vw] bg-background border-l shadow-2xl z-50 transform transition-transform duration-300 ease-in-out overflow-y-auto ${
-          isUploadDrawerOpen ? "translate-x-0" : "translate-x-full"
+        className={`fixed top-0 right-0 h-full w-[90vw] bg-background border-l shadow-2xl z-50 transform transition-transform duration-300 ease-in-out ${
+          sidebarOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        <div className="p-6 space-y-6">
-          {/* Header */}
-          <div className="flex items-center justify-between border-b pb-4">
-            <div className="flex items-center gap-3">
-              <Upload className="w-6 h-6" />
-              <h2 className="text-2xl font-bold">{t("weeklyReportUpload")}</h2>
-              <span className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-base font-medium">
-                {selectedYear} / {selectedWeek}
-              </span>
+        <div className="flex h-full">
+          {/* Sidebar Content */}
+          <div className="flex-1 flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b p-4">
+              <div className="flex items-center gap-3">
+                {activeTab === 'upload' ? (
+                  <>
+                    <Upload className="w-6 h-6" />
+                    <h2 className="text-xl font-bold">报告上传</h2>
+                  </>
+                ) : (
+                  <>
+                    <History className="w-6 h-6" />
+                    <h2 className="text-xl font-bold">上传历史</h2>
+                  </>
+                )}
+                <span className="px-3 py-1 bg-primary text-primary-foreground rounded-md text-sm font-medium">
+                  {selectedYear} / {selectedWeek}
+                </span>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
+                <X className="w-5 h-5" />
+              </Button>
             </div>
-            <Button variant="ghost" size="icon" onClick={() => setIsUploadDrawerOpen(false)} className="hover:bg-muted">
-              <X className="w-6 h-6" />
-            </Button>
-          </div>
+
+            {/* Tabs */}
+            <div className="flex border-b">
+              <button
+                onClick={() => setActiveTab('upload')}
+                className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'upload'
+                    ? 'border-primary text-primary bg-primary/10'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Upload className="w-4 h-4 mr-2 inline" />
+                报告上传
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab('history')
+                  void loadReportUploads()
+                }}
+                className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'history'
+                    ? 'border-primary text-primary bg-primary/10'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <History className="w-4 h-4 mr-2 inline" />
+                上传历史
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto">
+              {activeTab === 'upload' ? (
+                <div className="p-6 space-y-6">
 
           {/* LLM Parser Toggle */}
           <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
@@ -816,6 +952,18 @@ export function ReportUpload() {
                             <div className="flex items-center gap-2 text-red-600 text-sm">
                               <X className="w-3 h-3" />
                               Error
+                            </div>
+                          )}
+                          {processingStatus[uploadFiles[category]?.name || ""] === "pending" && (
+                            <div className="flex items-center gap-2 text-yellow-600 text-sm">
+                              <AlertCircle className="w-3 h-3" />
+                              等待用户确认
+                            </div>
+                          )}
+                          {processingStatus[uploadFiles[category]?.name || ""] === "cancelled" && (
+                            <div className="flex items-center gap-2 text-gray-600 text-sm">
+                              <X className="w-3 h-3" />
+                              已取消
                             </div>
                           )}
                         </div>
@@ -998,7 +1146,7 @@ export function ReportUpload() {
 
           {/* Action Buttons */}
           <div className="flex justify-end gap-4 pt-6 border-t">
-            <Button variant="outline" onClick={() => setIsUploadDrawerOpen(false)} className="text-lg px-8 py-4">
+            <Button variant="outline" onClick={() => setSidebarOpen(false)} className="text-lg px-8 py-4">
               <X className="w-5 h-5 mr-2" />
               {t("close")}
             </Button>
@@ -1024,115 +1172,81 @@ export function ReportUpload() {
               {isUploading ? "Saving..." : "Save to Database"}
             </Button>
           </div>
-        </div>
-      </div>
-
-      {/* Report Uploads Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FolderOpen className="w-5 h-5" />
-            Report Uploads History
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoadingUploads ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent"></div>
-              <span className="ml-2">Loading uploads...</span>
-            </div>
-          ) : reportUploads.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>No report uploads found</p>
-              <p className="text-sm">Upload a report to see it here</p>
-            </div>
-          ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>File Name</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>CW Label</TableHead>
-                    <TableHead>Projects</TableHead>
-                    <TableHead>Uploaded</TableHead>
-                    <TableHead>Created By</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {reportUploads.map((upload) => (
-                    <TableRow key={upload.id}>
-                      <TableCell className="font-medium">
-                        {upload.originalFilename}
-                      </TableCell>
-                      <TableCell>
-                        <Badge 
-                          variant={
-                            upload.status === 'parsed' ? 'default' : 
-                            upload.status === 'failed' ? 'destructive' : 
-                            'secondary'
-                          }
-                        >
-                          {upload.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{upload.cwLabel}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">
-                          {upload.projectCount} project{upload.projectCount !== 1 ? 's' : ''}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                          <Calendar className="w-3 h-3" />
-                          {new Date(upload.uploadedAt).toLocaleDateString()}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                          <User className="w-3 h-3" />
-                          {upload.createdBy}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => {
-                                setSelectedUpload(upload)
-                                void loadUploadHistory(upload.id)
-                              }}
-                            >
-                              <Eye className="w-4 h-4 mr-1" />
-                              View History
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent className="max-w-4xl max-h-[80vh]">
-                            <DialogHeader>
-                              <DialogTitle className="flex items-center gap-2">
-                                <FileText className="w-5 h-5" />
-                                Project History for {selectedUpload?.originalFilename}
-                              </DialogTitle>
-                              <DialogDescription>
-                                {selectedUpload && `Uploaded on ${new Date(selectedUpload.uploadedAt).toLocaleString()}`}
-                              </DialogDescription>
-                            </DialogHeader>
-                            
-                            {isLoadingHistory ? (
-                              <div className="flex items-center justify-center py-8">
-                                <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent"></div>
-                                <span className="ml-2">Loading project history...</span>
+                </div>
+              ) : (
+                <div className="p-6">
+                  {/* Upload History Content */}
+                  {isLoadingUploads ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent"></div>
+                      <span className="ml-2">Loading uploads...</span>
+                    </div>
+                  ) : reportUploads.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                      <p>No report uploads found</p>
+                      <p className="text-sm">Upload a report to see it here</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {reportUploads.map((upload) => (
+                        <div key={upload.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1">
+                              <h3 className="font-medium text-lg">{upload.originalFilename}</h3>
+                              <div className="flex items-center gap-2 mt-1">
+                                <Badge 
+                                  variant={
+                                    upload.status === 'parsed' ? 'default' : 
+                                    upload.status === 'failed' ? 'destructive' : 
+                                    'secondary'
+                                  }
+                                >
+                                  {upload.status}
+                                </Badge>
+                                <Badge variant="outline">
+                                  {upload.projectCount} project{upload.projectCount !== 1 ? 's' : ''}
+                                </Badge>
+                                <span className="text-sm text-muted-foreground">{upload.cwLabel}</span>
                               </div>
-                            ) : uploadHistory ? (
-                              <ScrollArea className="h-[60vh]">
-                                <div className="space-y-4">
-                                  <div className="bg-muted/50 rounded-lg p-4">
-                                    <h4 className="font-semibold mb-2">Upload Summary</h4>
-                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                            </div>
+                            <div className="text-right text-sm text-muted-foreground">
+                              <div className="flex items-center gap-1">
+                                <Calendar className="w-3 h-3" />
+                                {new Date(upload.uploadedAt).toLocaleDateString()}
+                              </div>
+                              <div className="flex items-center gap-1 mt-1">
+                                <User className="w-3 h-3" />
+                                {upload.createdBy}
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => {
+                              setSelectedUpload(upload)
+                              void loadUploadHistory(upload.id)
+                            }}
+                            className="w-full"
+                          >
+                            <Eye className="w-4 h-4 mr-2" />
+                            查看详细历史
+                          </Button>
+                          
+                          {selectedUpload?.id === upload.id && (
+                            <div className="mt-4 border-t pt-4">
+                              {isLoadingHistory ? (
+                                <div className="flex items-center justify-center py-4">
+                                  <div className="animate-spin rounded-full h-6 w-6 border-2 border-blue-600 border-t-transparent"></div>
+                                  <span className="ml-2 text-sm">Loading project history...</span>
+                                </div>
+                              ) : uploadHistory && uploadHistory.projectHistory ? (
+                                <div className="space-y-3">
+                                  <div className="bg-muted/50 rounded-lg p-3">
+                                    <h4 className="font-semibold mb-2 text-sm">Upload Summary</h4>
+                                    <div className="grid grid-cols-2 gap-2 text-xs">
                                       <div>
                                         <span className="font-medium">Status:</span> {uploadHistory.upload.status}
                                       </div>
@@ -1145,7 +1259,7 @@ export function ReportUpload() {
                                       <div>
                                         <span className="font-medium">Parsed:</span>{" "}
                                         {uploadHistory.upload.parsedAt 
-                                          ? new Date(uploadHistory.upload.parsedAt).toLocaleString()
+                                          ? new Date(uploadHistory.upload.parsedAt).toLocaleDateString()
                                           : "Not parsed"
                                         }
                                       </div>
@@ -1153,48 +1267,48 @@ export function ReportUpload() {
                                   </div>
 
                                   <div>
-                                    <h4 className="font-semibold mb-3">Project History Records</h4>
+                                    <h4 className="font-semibold mb-2 text-sm">Project History Records</h4>
                                     {uploadHistory.projectHistory.length === 0 ? (
-                                      <p className="text-muted-foreground text-center py-4">
+                                      <p className="text-muted-foreground text-center py-4 text-sm">
                                         No project history records found
                                       </p>
                                     ) : (
-                                      <div className="space-y-3">
+                                      <div className="space-y-2 max-h-60 overflow-y-auto">
                                         {uploadHistory.projectHistory.map((record: any) => (
-                                          <div key={record.id} className="border rounded-lg p-4">
-                                            <div className="flex items-start justify-between mb-2">
+                                          <div key={record.id} className="border rounded p-3 text-sm">
+                                            <div className="flex items-start justify-between mb-1">
                                               <div>
-                                                <h5 className="font-medium">
+                                                <h5 className="font-medium text-sm">
                                                   {record.projectCode} - {record.projectName || "Unknown Project"}
                                                 </h5>
-                                                <div className="flex items-center gap-2 mt-1">
-                                                  <Badge variant="outline">{record.category}</Badge>
-                                                  <Badge variant="secondary">{record.entryType}</Badge>
+                                                <div className="flex items-center gap-1 mt-1">
+                                                  <Badge variant="outline" className="text-xs">{record.category}</Badge>
+                                                  <Badge variant="secondary" className="text-xs">{record.entryType}</Badge>
                                                 </div>
                                               </div>
-                                              <div className="text-sm text-muted-foreground">
+                                              <div className="text-xs text-muted-foreground">
                                                 {record.logDate && new Date(record.logDate).toLocaleDateString()}
                                               </div>
                                             </div>
                                             
                                             {record.title && (
-                                              <h6 className="font-medium text-sm mb-2">{record.title}</h6>
+                                              <h6 className="font-medium text-xs mb-1">{record.title}</h6>
                                             )}
                                             
                                             {record.summary && (
-                                              <p className="text-sm text-muted-foreground mb-2">
+                                              <p className="text-xs text-muted-foreground mb-1 line-clamp-2">
                                                 {record.summary}
                                               </p>
                                             )}
                                             
                                             {record.nextActions && (
-                                              <div className="text-sm">
+                                              <div className="text-xs">
                                                 <span className="font-medium">Next Actions:</span> {record.nextActions}
                                               </div>
                                             )}
                                             
                                             {record.owner && (
-                                              <div className="text-sm text-muted-foreground mt-1">
+                                              <div className="text-xs text-muted-foreground mt-1">
                                                 <span className="font-medium">Owner:</span> {record.owner}
                                               </div>
                                             )}
@@ -1204,23 +1318,105 @@ export function ReportUpload() {
                                     )}
                                   </div>
                                 </div>
-                              </ScrollArea>
-                            ) : (
-                              <div className="text-center py-8 text-muted-foreground">
-                                Select an upload to view its project history
-                              </div>
-                            )}
-                          </DialogContent>
-                        </Dialog>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                              ) : (
+                                <div className="text-center py-4 text-muted-foreground text-sm">
+                                  {uploadHistory ? "No project history found" : "Failed to load history"}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* Collapse Button */}
+          <div className="w-8 flex-shrink-0 bg-muted/50 border-l flex items-center justify-center">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={() => setSidebarOpen(false)}
+              className="h-full w-full rounded-none hover:bg-muted"
+            >
+              <PanelRightClose className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      </div>
+
+
+      {/* Duplicate File Confirmation Dialog */}
+      <Dialog open={duplicateFileDialog.isOpen} onOpenChange={(open) => {
+        if (!open) {
+          setDuplicateFileDialog({
+            isOpen: false,
+            file: null,
+            duplicateInfo: null,
+            category: "",
+            useLlm: false
+          })
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-yellow-500" />
+              文件重复警告
+            </DialogTitle>
+            <DialogDescription>
+              {duplicateFileDialog.duplicateInfo?.message}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {duplicateFileDialog.duplicateInfo && (
+            <div className="space-y-4">
+              <div className="bg-yellow-50 p-3 rounded-md border border-yellow-200">
+                <p className="text-sm font-medium text-yellow-800">
+                  已存在的文件:
+                </p>
+                <p className="text-sm text-yellow-700">
+                  📁 {duplicateFileDialog.duplicateInfo.existingFile.filename}
+                </p>
+                <p className="text-xs text-yellow-600">
+                  上传时间: {new Date(duplicateFileDialog.duplicateInfo.existingFile.uploadedAt).toLocaleString()}
+                </p>
+              </div>
+              
+              <div className="bg-blue-50 p-3 rounded-md border border-blue-200">
+                <p className="text-sm font-medium text-blue-800">
+                  当前文件:
+                </p>
+                <p className="text-sm text-blue-700">
+                  📁 {duplicateFileDialog.duplicateInfo.currentFile.filename}
+                </p>
+              </div>
+              
+              <div className="flex flex-col gap-2 pt-2">
+                <Button 
+                  onClick={() => handleDuplicateConfirm(true)}
+                  className="w-full"
+                  variant="default"
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  继续导入 (覆盖重复数据)
+                </Button>
+                <Button 
+                  onClick={() => handleDuplicateConfirm(false)}
+                  className="w-full"
+                  variant="outline"
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  取消导入
+                </Button>
+              </div>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

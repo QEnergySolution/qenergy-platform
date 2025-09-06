@@ -55,7 +55,8 @@ def _create_or_get_upload_record(
     db: Session,
     file_path: str,
     original_filename: str,
-    created_by: str
+    created_by: str,
+    force_import: bool = False
 ) -> Dict:
     """Create or get existing upload record based on SHA256 hash."""
     # Calculate file hash
@@ -73,21 +74,22 @@ def _create_or_get_upload_record(
         category = "Unknown"
         log_date = date.today()
     
-    # Check if upload already exists by SHA256
-    existing = db.execute(
-        text("SELECT id, status FROM report_uploads WHERE sha256 = :sha256"),
-        {"sha256": file_hash}
-    ).first()
-    
-    if existing:
-        logger.info(f"File already uploaded with ID: {existing.id}")
-        return {
-            "upload_id": existing.id,
-            "is_new": False,
-            "cw_label": cw_label,
-            "category": category,
-            "log_date": log_date
-        }
+    # Check if upload already exists by SHA256 (unless forcing import)
+    if not force_import:
+        existing = db.execute(
+            text("SELECT id, status FROM report_uploads WHERE sha256 = :sha256"),
+            {"sha256": file_hash}
+        ).first()
+        
+        if existing:
+            logger.info(f"File already uploaded with ID: {existing.id}")
+            return {
+                "upload_id": existing.id,
+                "is_new": False,
+                "cw_label": cw_label,
+                "category": category,
+                "log_date": log_date
+            }
     
     # Create new upload record
     result = db.execute(
@@ -130,7 +132,8 @@ def import_single_docx_simple_with_metadata(
     db: Session,
     file_path: str,
     original_filename: str,
-    created_by: str
+    created_by: str,
+    force_import: bool = False
 ) -> Dict:
     """
     Import a single DOCX file using simple parsing (no LLM) and save to database.
@@ -153,7 +156,7 @@ def import_single_docx_simple_with_metadata(
         logger.warning(f"Could not seed projects: {e}")
     
     # Create or get upload record
-    upload_info = _create_or_get_upload_record(db, file_path, original_filename, created_by)
+    upload_info = _create_or_get_upload_record(db, file_path, original_filename, created_by, force_import)
     upload_id = upload_info["upload_id"]
     cw_label = upload_info["cw_label"]
     category = upload_info["category"]
@@ -428,7 +431,8 @@ def import_single_docx_llm_with_metadata(
     file_path: str,
     original_filename: str,
     created_by: str,
-    project_code_mapper: Optional[Callable[[str], Optional[str]]] = None
+    project_code_mapper: Optional[Callable[[str], Optional[str]]] = None,
+    force_import: bool = False
 ) -> Dict:
     """
     Import a single DOCX file using LLM parsing and save to database.
@@ -452,7 +456,7 @@ def import_single_docx_llm_with_metadata(
         logger.warning(f"Could not seed projects: {e}")
     
     # Create or get upload record
-    upload_info = _create_or_get_upload_record(db, file_path, original_filename, created_by)
+    upload_info = _create_or_get_upload_record(db, file_path, original_filename, created_by, force_import)
     upload_id = upload_info["upload_id"]
     cw_label = upload_info["cw_label"]
     category = upload_info["category"]
