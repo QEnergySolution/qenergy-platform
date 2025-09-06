@@ -316,6 +316,11 @@ BACKEND_CORS_ORIGINS=["http://localhost:3000"]
 DEBUG=true
 ENVIRONMENT=development
 LOG_LEVEL=INFO
+
+# Azure OpenAI Configuration (for AI analysis features)
+AZURE_OPENAI_API_KEY=your-azure-openai-api-key-here
+AZURE_OPENAI_ENDPOINT=https://your-resource-name.openai.azure.com/
+AZURE_OPENAI_DEPLOYMENT=gpt-4
 ```
 
 ## 🎯 Best Practices

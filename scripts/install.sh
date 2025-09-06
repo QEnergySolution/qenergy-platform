@@ -112,12 +112,18 @@ install_linux_deps() {
         npm install -g pnpm
     fi
     
-    # Install PostgreSQL
+    # Install PostgreSQL and additional tools
     if ! command_exists psql; then
         print_status "Installing PostgreSQL..."
         sudo apt-get install -y postgresql postgresql-contrib
         sudo systemctl start postgresql
         sudo systemctl enable postgresql
+    fi
+
+    # Install lsof (for service checking)
+    if ! command_exists lsof; then
+        print_status "Installing lsof..."
+        sudo apt-get install -y lsof
     fi
     
     # Install Miniforge
@@ -237,6 +243,17 @@ verify_installation() {
     else
         print_warning "Database connection: Please check credentials"
     fi
+
+    # Check Azure OpenAI configuration
+    if [[ -f "backend/.env" ]]; then
+        if grep -q "AZURE_OPENAI_API_KEY" backend/.env && grep -q "AZURE_OPENAI_ENDPOINT" backend/.env; then
+            print_success "Azure OpenAI configuration: Found"
+        else
+            print_warning "Azure OpenAI configuration: Please add AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT to backend/.env"
+        fi
+    else
+        print_warning "Backend environment file not found: Please copy backend/env.example to backend/.env and configure"
+    fi
 }
 
 # Main installation function
@@ -279,7 +296,7 @@ main() {
     echo "=========================================="
     echo
     echo "Next steps:"
-    echo "1. Update backend/.env with your database credentials"
+    echo "1. Update backend/.env with your database credentials and Azure OpenAI keys"
     echo "2. Start the backend: cd backend && conda activate qenergy-backend && uvicorn app.main:app --reload --port 8002"
     echo "3. Start the frontend: pnpm dev"
     echo "4. Open http://localhost:3000 in your browser"

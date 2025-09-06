@@ -123,7 +123,7 @@ Acceptance for Phase 2A:
 
 #### 2B5 - Token Limits & Reliability (✅ Completed 2025-08-29)
 - [x] Safe truncation & token estimation; env vars:
-  - `AZURE_OPENAI_MAX_CONTEXT=8000` / `AZURE_OPENAI_MAX_INPUT=3500` / `AZURE_OPENAI_MAX_OUTPUT=4000` / `AZURE_OPENAI_SAFETY_BUFFER=500`
+  - `AZURE_OPENAI_MAX_CONTEXT=8002` / `AZURE_OPENAI_MAX_INPUT=3500` / `AZURE_OPENAI_MAX_OUTPUT=4000` / `AZURE_OPENAI_SAFETY_BUFFER=500`
 - [x] Smart `max_tokens` allocation; truncated JSON recovery (strip ```json fences, parse incomplete arrays, regex fallback)
 - [x] Tests & docs: `backend/tests/test_token_limits.py`, `backend/Token_Limits_Configuration.md`
 - [x] Verified: 12,711 char doc → 27 rows extracted; log includes smart allocation
@@ -183,7 +183,7 @@ Acceptance for Phase 2C:
 ### P0 Phase 2D — Analysis Core (Sync) + Results Listing
 Goal: Run basic analysis (sync/small batches) and list results.
 
-- [ ] Backend: Analysis Core
+- [x] Backend: Analysis Core
   - Endpoints  
     - `POST /api/reports/analyze` → trigger sync analysis  
     - `GET /api/weekly-analysis?past_cw&latest_cw&language&category` → list results  
@@ -200,14 +200,14 @@ Goal: Run basic analysis (sync/small batches) and list results.
     - LLM client wiring (Azure OpenAI): env `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`; retries + 429 backoff  
   - Data source for `by-cw-pair` → derive from `project_history` presence in either CW  
 
-- [ ] Frontend: Results Display (MVP)
+- [x] Frontend: Results Display (MVP)
   - Components: charts (risk/similarity), tables/cards, historical records view  
   - Service layer: `frontend/lib/api/analysis.ts` + tests  
 
 Acceptance for Phase 2D:
-- [ ] Analysis runs and persists for small datasets; results list renders  
-- [ ] Cache reuse verified on repeat runs  
-- [ ] Unit + integration tests pass  
+- [x] Analysis runs and persists for small datasets; results list renders  
+- [x] Cache reuse verified on repeat runs  
+- [x] Unit + integration tests pass  
 
 ---
 

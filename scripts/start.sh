@@ -58,12 +58,52 @@ start_postgres_linux() {
     fi
 }
 
-# Function to start backend
-start_backend() {
+# Function to start backend (Linux)
+start_backend_linux() {
     if ! is_service_running 8002; then
         print_status "Starting backend..."
         cd backend
-        source /opt/homebrew/Caskroom/miniforge/base/etc/profile.d/conda.sh
+        # Source conda for Linux (try multiple paths)
+        if [[ -f "$HOME/miniforge3/etc/profile.d/conda.sh" ]]; then
+            source $HOME/miniforge3/etc/profile.d/conda.sh
+        elif [[ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]]; then
+            source $HOME/miniconda3/etc/profile.d/conda.sh
+        elif [[ -f "/opt/conda/etc/profile.d/conda.sh" ]]; then
+            source /opt/conda/etc/profile.d/conda.sh
+        fi
+        conda activate qenergy-backend
+        uvicorn app.main:app --reload --port 8002 --host 0.0.0.0 &
+        cd ..
+        sleep 5
+        print_success "Backend started on http://localhost:8002"
+    else
+        print_status "Backend already running on port 8002"
+    fi
+}
+
+# Function to start backend
+start_backend() {
+    OS=$(detect_os)
+    if [[ "$OS" == "linux" ]]; then
+        start_backend_linux
+    else
+        start_backend_macos
+    fi
+}
+
+# Function to start backend (macOS)
+start_backend_macos() {
+    if ! is_service_running 8002; then
+        print_status "Starting backend..."
+        cd backend
+        # Source conda for macOS (try multiple paths)
+        if [[ -f "/opt/homebrew/Caskroom/miniforge/base/etc/profile.d/conda.sh" ]]; then
+            source /opt/homebrew/Caskroom/miniforge/base/etc/profile.d/conda.sh
+        elif [[ -f "$HOME/miniforge3/etc/profile.d/conda.sh" ]]; then
+            source $HOME/miniforge3/etc/profile.d/conda.sh
+        elif [[ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]]; then
+            source $HOME/miniconda3/etc/profile.d/conda.sh
+        fi
         conda activate qenergy-backend
         uvicorn app.main:app --reload --port 8002 --host 0.0.0.0 &
         cd ..

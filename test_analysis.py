@@ -7,7 +7,7 @@ import requests
 import json
 import time
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://localhost:8002"
 
 def test_analysis_endpoints():
     print("🧪 Testing Weekly Report Analysis Endpoints")
