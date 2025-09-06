@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { FileText, Play, Square, Download, ArrowUpDown, ChevronUp, ChevronDown, MessageSquare, X } from "lucide-react"
 import { useLanguage } from "@/hooks/use-language"
 import { analysisService } from "@/lib/api/analysis"
+import { getProjectHistory } from "@/lib/api/reports"
 import { useToast } from "@/hooks/use-toast"
 
 interface AnalysisResult {
@@ -69,6 +70,9 @@ export function WeeklyReport() {
     { value: "Investment", label: "Investment" }
   ]
 
+  // Track weeks that actually have records for a given year (and optional category)
+  const [availableWeeksByYear, setAvailableWeeksByYear] = useState<Record<string, Set<string>>>({})
+
   const getCurrentWeek = () => {
     const now = new Date()
     const startOfYear = new Date(now.getFullYear(), 0, 1)
@@ -99,6 +103,28 @@ export function WeeklyReport() {
       setPastWeek("CW52")
     }
   }, [currentYear])
+
+  // Load available weeks for the chosen years and category
+  useEffect(() => {
+    const loadAvailableWeeks = async (year: string | null) => {
+      if (!year) return
+      try {
+        const resp = await getProjectHistory({
+          year: Number.parseInt(year),
+          // If category is "all" we don't filter so that any week with any data is enabled
+          category: selectedCategory && selectedCategory !== "all" ? selectedCategory : undefined,
+        })
+        const weekSet = new Set<string>(resp.projectHistory.map((r) => r.cwLabel))
+        setAvailableWeeksByYear((prev) => ({ ...prev, [year]: weekSet }))
+      } catch {
+        // On error, leave weeks disabled by default for safety
+        setAvailableWeeksByYear((prev) => ({ ...prev, [year]: new Set() }))
+      }
+    }
+
+    void loadAvailableWeeks(pastYear)
+    void loadAvailableWeeks(latestYear)
+  }, [pastYear, latestYear, selectedCategory])
 
   // Load existing analysis results when CW selection changes
   useEffect(() => {
@@ -385,11 +411,14 @@ export function WeeklyReport() {
                     </SelectTrigger>
                     <SelectContent>
                       {pastYear &&
-                        getWeeksForYear(Number.parseInt(pastYear)).map((week) => (
-                          <SelectItem key={week} value={week}>
-                            {week}
-                          </SelectItem>
-                        ))}
+                        getWeeksForYear(Number.parseInt(pastYear)).map((week) => {
+                          const hasData = availableWeeksByYear[pastYear]?.has(week)
+                          return (
+                            <SelectItem key={week} value={week} disabled={!hasData} className={!hasData ? "text-muted-foreground" : undefined}>
+                              {week}
+                            </SelectItem>
+                          )
+                        })}
                     </SelectContent>
                   </Select>
                 </div>
@@ -423,11 +452,14 @@ export function WeeklyReport() {
                     </SelectTrigger>
                     <SelectContent>
                       {latestYear &&
-                        getWeeksForYear(Number.parseInt(latestYear)).map((week) => (
-                          <SelectItem key={week} value={week}>
-                            {week}
-                          </SelectItem>
-                        ))}
+                        getWeeksForYear(Number.parseInt(latestYear)).map((week) => {
+                          const hasData = availableWeeksByYear[latestYear]?.has(week)
+                          return (
+                            <SelectItem key={week} value={week} disabled={!hasData} className={!hasData ? "text-muted-foreground" : undefined}>
+                              {week}
+                            </SelectItem>
+                          )
+                        })}
                     </SelectContent>
                   </Select>
                 </div>

@@ -153,6 +153,25 @@ export function ReportUpload() {
     }
   }, [selectedYear, selectedWeek, selectedCategory])
 
+  // Track which weeks have data for current year/category, to disable empty options
+  const [availableWeeks, setAvailableWeeks] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    const loadAvailableWeeks = async () => {
+      if (!selectedYear) return
+      try {
+        const response = await getProjectHistory({
+          year: parseInt(selectedYear),
+          category: selectedCategory && selectedCategory !== "all" ? selectedCategory : undefined,
+        })
+        setAvailableWeeks(new Set(response.projectHistory.map((r) => r.cwLabel)))
+      } catch {
+        setAvailableWeeks(new Set())
+      }
+    }
+    void loadAvailableWeeks()
+  }, [selectedYear, selectedCategory])
+
   // Load data when year and week are selected
   useEffect(() => {
     void loadProjectHistory()
@@ -693,11 +712,14 @@ export function ReportUpload() {
                 </SelectTrigger>
                 <SelectContent>
                   {selectedYear &&
-                    getWeeksForYear(Number.parseInt(selectedYear)).map((week) => (
-                      <SelectItem key={week} value={week}>
-                        {week}
-                      </SelectItem>
-                    ))}
+                    getWeeksForYear(Number.parseInt(selectedYear)).map((week) => {
+                      const hasData = availableWeeks.has(week)
+                      return (
+                        <SelectItem key={week} value={week} disabled={!hasData} className={!hasData ? "text-muted-foreground" : undefined}>
+                          {week}
+                        </SelectItem>
+                      )
+                    })}
                 </SelectContent>
               </Select>
             </div>
