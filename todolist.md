@@ -188,7 +188,7 @@ Goal: Run basic analysis (sync/small batches) and list results.
     - `POST /api/reports/analyze` → trigger sync analysis  
     - `GET /api/weekly-analysis?past_cw&latest_cw&language&category` → list results  
     - `GET /api/projects/by-cw-pair?past_cw&latest_cw` → list candidate projects (present in either CW)  
-  - Pipeline  
+  - [x] Pipeline  
     - Clean mocked data  
     - Data fetch: `(project_code, category, cw_label)` → from `project_history`  
     - Uniqueness check: skip if already analyzed → return existing and continue  
@@ -198,11 +198,40 @@ Goal: Run basic analysis (sync/small batches) and list results.
     - Persist: `UPSERT` into `weekly_report_analysis`  
     - Cache reuse: skip unchanged (timestamps/hash)  
     - LLM client wiring (Azure OpenAI): env `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`; retries + 429 backoff  
-  - Data source for `by-cw-pair` → derive from `project_history` presence in either CW  
+  - [x] Data source for `by-cw-pair` → derive from `project_history` presence in either CW  
 
 - [x] Frontend: Results Display (MVP)
   - Components: charts (risk/similarity), tables/cards, historical records view  
   - Service layer: `frontend/lib/api/analysis.ts` + tests  
+
+- [x] Modify the entity linking logics to improve the matching accuracy
+  - [x] exceptionally adding 3 matching rules 
+  - [x] Now parse_docx_rows not only matches project_name, but also checks portfolio_cluster. (If there is a section that looks like a portfolio_cluster, it can also be treated as project history, and records for all projects under that portfolio_cluster will be created at once.)
+
+- [x] **Report Analysis / Report Upload dropdown behavior**
+  - Dropdown contains many options.
+  - If an option has records:
+    - Display in **black**.
+    - Option is **clickable**.
+  - If an option has no records:
+    - Display in **gray**.
+    - Option is **not clickable**.
+
+- [x] **Report History UI Update**
+  - Replace current mode (report history shown directly under report list) with:
+    - A **"View Report Upload History"** button in the top-right corner.
+    - Clicking the button opens a right-side drawer.
+  - Merge the two right-side drawers (View Report Upload History + Report Upload) into a **single sidebar with tabs**.
+  - Add a collapse button at the far right to fold the sidebar.
+
+- [x] **Weekly Report Analysis Enhancements**
+  - Add a **category** field to the selection dropdown (covering all functionalities).
+  - Implement comparison of reports between two selected time points  
+    - Example: `2025-CW16-DEV` vs. `2025-CW18-DEV`.
+
+* [x] **Update “Upload Report” button color**
+  Change from current pink/purple gradient to brand-aligned **primary green** (darker or brighter than “Save” to maintain hierarchy). Ensure consistent hover/active states.
+
 
 Acceptance for Phase 2D:
 - [x] Analysis runs and persists for small datasets; results list renders  

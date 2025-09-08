@@ -1,0 +1,66 @@
+
+A1. Flowchart of project name extraction and entity linking
+[START]
+   |
+   v
+[Load project.csv]
+   |--> Keep rows with status==1
+   |--> Collect project_names (original case)
+   |--> Build cluster_to_projects map
+   |
+   v
+[Generate aliases for each project & cluster]
+   |--> Rules: swap spaces/underscores/hyphens; glue letter–digit;
+   |    normalize whitespace; alnum-only variant
+   |
+   v
+[Read DOCX -> build full_text]
+   |--> Include paragraph text + table text
+   |
+   v
+[Build folded text (text_fold)]
+   |--> Unicode NFKD accent fold + lowercase
+   |
+   v
++---------------- Two candidate-detection paths ----------------+
+|                                                               |
+| Path A: Alias-regex matching                                  |  Path B: Generic-pattern matching
+| ------------------------------------------------------------- |  --------------------------------------------
+| · Run big alias regex on text_fold                            |  · Detect "Name + capacity" variants:
+| · Map matched slice -> best project via RapidFuzz             |    (Country) Name 105MW / Name (65 MW) / Name 95.88 MW
+|   token_set_ratio ≥ 90                                        |  · Try project match first (≥86);
+|                                                               |    else try cluster match (≥84) then expand
++-------------------------------+-------------------------------+-------------------------------+
+                                |
+                                v
+[Merge candidate mentions]
+   |--> Structure: (position, [canonical projects])
+   |--> De-duplicate (same pos & project), sort by position
+   |
+   v
+[Sectioning with near-boundary merge]
+   |--> For adjacent positions, check gap (MIN_GAP = 80 chars)
+   |    · If gap < MIN_GAP: extend current section to the 3rd boundary,
+   |      and duplicate section for BOTH the current and next projects
+   |    · Else: normal boundary (end at next position)
+   |
+   v
+[Extract section_text = full_text[start:end]]
+   |
+   v
+[Final filtering & normalization]
+   |--> Ensure project exists in CSV; if not, fuzzy-map again (≥86)
+   |--> Drop below-threshold or keep as “unmatched” for diagnostics
+   |
+   v
+[Build output rows]
+   |--> For each project section:
+   |    { category, entry_type='Report', cw_label,
+   |      title=f"{project} - {cw}", summary=section_text,
+   |      source_text=section_text, ... }
+   |
+   v
+[If no hits -> emit single row with full document as summary]
+   |
+   v
+[END]
