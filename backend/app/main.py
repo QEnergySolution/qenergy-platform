@@ -190,6 +190,7 @@ async def get_upload_project_history(upload_id: str, db: Session = Depends(get_d
             SELECT 
                 ph.id,
                 ph.project_code,
+                ph.project_name,
                 ph.category,
                 ph.entry_type,
                 ph.log_date,
@@ -200,7 +201,7 @@ async def get_upload_project_history(upload_id: str, db: Session = Depends(get_d
                 ph.owner,
                 ph.source_text,
                 ph.created_at,
-                p.project_name
+                p.project_name AS joined_project_name
             FROM project_history ph
             LEFT JOIN projects p ON p.project_code = ph.project_code
             WHERE ph.source_upload_id = :upload_id
@@ -221,7 +222,7 @@ async def get_upload_project_history(upload_id: str, db: Session = Depends(get_d
             history_list.append({
                 "id": str(record.id),
                 "projectCode": record.project_code,
-                "projectName": record.project_name,
+                "projectName": record.project_name or record.joined_project_name,
                 "category": record.category,
                 "entryType": record.entry_type,
                 "logDate": record.log_date.isoformat() if record.log_date else None,
@@ -259,6 +260,7 @@ async def get_project_history(
             SELECT 
                 ph.id,
                 ph.project_code,
+                ph.project_name,
                 ph.category,
                 ph.entry_type,
                 ph.log_date,
@@ -270,7 +272,7 @@ async def get_project_history(
                 ph.source_text,
                 ph.created_at,
                 ph.updated_at,
-                p.project_name,
+                p.project_name AS joined_project_name,
                 p.portfolio_cluster
             FROM project_history ph
             LEFT JOIN projects p ON p.project_code = ph.project_code
@@ -301,7 +303,7 @@ async def get_project_history(
             history_list.append({
                 "id": str(record.id),
                 "projectCode": record.project_code,
-                "projectName": record.project_name,
+                "projectName": record.project_name or record.joined_project_name,
                 "category": record.category,
                 "entryType": record.entry_type,
                 "logDate": record.log_date.isoformat() if record.log_date else None,

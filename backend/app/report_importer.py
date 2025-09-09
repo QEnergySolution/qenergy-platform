@@ -301,17 +301,18 @@ def import_single_docx_simple_with_metadata(
             db.execute(
                 text("""
                     INSERT INTO project_history (
-                        project_code, category, entry_type, log_date, cw_label,
+                        project_code, project_name, category, entry_type, log_date, cw_label,
                         title, summary, source_text, source_upload_id,
                         created_by, updated_by
                     ) VALUES (
-                        :project_code, :category, :entry_type, :log_date, :cw_label,
+                        :project_code, :project_name, :category, :entry_type, :log_date, :cw_label,
                         :title, :summary, :source_text, :source_upload_id,
                         :created_by, :updated_by
                     )
                 """),
                 {
                     "project_code": project_code,
+                    "project_name": project_name,
                     "category": category,
                     "entry_type": "Report",
                     "log_date": log_date,
@@ -558,17 +559,18 @@ def import_single_docx_llm_with_metadata(
             db.execute(
                 text("""
                     INSERT INTO project_history (
-                        project_code, category, entry_type, log_date, cw_label,
+                        project_code, project_name, category, entry_type, log_date, cw_label,
                         title, summary, source_text, next_actions, owner,
                         source_upload_id, created_by, updated_by
                     ) VALUES (
-                        :project_code, :category, :entry_type, :log_date, :cw_label,
+                        :project_code, :project_name, :category, :entry_type, :log_date, :cw_label,
                         :title, :summary, :source_text, :next_actions, :owner,
                         :source_upload_id, :created_by, :updated_by
                     )
                 """),
                 {
                     "project_code": project_code,
+                    "project_name": project_name,
                     "category": row_data.get("category", category),
                     "entry_type": row_data.get("entry_type", "Report"),
                     "log_date": log_date,

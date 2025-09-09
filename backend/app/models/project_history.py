@@ -12,6 +12,7 @@ class ProjectHistory(Base):
 
     id: Mapped[str] = mapped_column(primary_key=True, server_default=text("gen_random_uuid()"))
     project_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    project_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     category: Mapped[str | None] = mapped_column(String(128))
     entry_type: Mapped[str] = mapped_column(String(50), nullable=False)
     log_date: Mapped[str] = mapped_column(Date, nullable=False)

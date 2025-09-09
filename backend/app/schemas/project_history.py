@@ -24,6 +24,7 @@ class Category(str, Enum):
 
 class ProjectHistoryBase(BaseModel):
     project_code: constr(min_length=1, max_length=32) = Field(..., description="Project code")
+    project_name: Optional[constr(min_length=1, max_length=255)] = Field(None, description="Project name")
     category: Optional[str] = Field(None, description="Category (Development, EPC, Finance, Investment)")
     entry_type: EntryType = Field(..., description="Entry type")
     log_date: date = Field(..., description="Log date")
@@ -40,6 +41,7 @@ class ProjectHistoryCreate(ProjectHistoryBase):
 
 
 class ProjectHistoryUpdate(BaseModel):
+    project_name: Optional[constr(min_length=1, max_length=255)] = Field(None, description="Project name")
     category: Optional[str] = Field(None, description="Category (Development, EPC, Finance, Investment)")
     entry_type: Optional[EntryType] = Field(None, description="Entry type")
     title: Optional[str] = Field(None, description="Title")
