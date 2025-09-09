@@ -303,10 +303,8 @@ export interface ProjectHistoryResponse {
 
 export async function getProjectHistory(filters?: ProjectHistoryFilters): Promise<ProjectHistoryResponse> {
   const url = new URL(`${BASE_URL.replace(/\/$/, "")}/project-history`);
-  
-  if (filters?.year) {
-    url.searchParams.set("year", filters.year.toString());
-  }
+
+  // Backend supports cw_label and category; year is optional and may be ignored server-side
   if (filters?.cwLabel) {
     url.searchParams.set("cw_label", filters.cwLabel);
   }
@@ -314,13 +312,53 @@ export async function getProjectHistory(filters?: ProjectHistoryFilters): Promis
     url.searchParams.set("category", filters.category);
   }
   
+  // Add pagination parameters
+  url.searchParams.set("page", "1");
+  url.searchParams.set("page_size", "100"); // Get a reasonable number of records
+
+  console.log('Fetching project history from:', url.toString());
   const res = await fetch(url.toString());
-  
+
   if (!res.ok) {
+    console.error('Failed to get project history:', res.status, await res.text().catch(() => ''));
     throw new Error(`Failed to get project history: ${res.status}`);
   }
-  
-  return (await res.json()) as ProjectHistoryResponse;
+
+  const data = await res.json();
+  console.log('Project history API response:', data);
+
+  // Adapt backend pagination shape { items, total, page, page_size } to frontend shape
+  if (Array.isArray(data?.items) && typeof data?.total === "number") {
+    const projectHistory = (data.items as any[]).map((it) => ({
+      id: String(it.id),
+      projectCode: String(it.project_code),
+      projectName: it.project_name ?? null, // backend doesn't provide; keep null if missing
+      category: String(it.category ?? ""),
+      entryType: String(it.entry_type ?? ""),
+      logDate: it.log_date ?? null,
+      cwLabel: String(it.cw_label ?? ""),
+      title: it.title ?? null,
+      summary: it.summary ?? null,
+      nextActions: it.next_actions ?? null,
+      owner: it.owner ?? null,
+      sourceText: it.source_text ?? null,
+      createdAt: String(it.created_at ?? ""),
+    }));
+
+    const response: ProjectHistoryResponse = {
+      projectHistory,
+      totalRecords: Number(data.total),
+      filters: {
+        year: filters?.year,
+        cwLabel: filters?.cwLabel,
+        category: filters?.category,
+      },
+    };
+    return response;
+  }
+
+  // If backend already returns the expected shape, just return it
+  return data as ProjectHistoryResponse;
 }
 
 

@@ -1,22 +1,63 @@
-import { apiClient } from "./client";
-import type { ProjectListItem } from "../types/project";
+import { apiClient } from './client';
+import {
+  Project,
+  ProjectCreate,
+  ProjectUpdate,
+  ProjectPagination,
+  ProjectBulkUpsertRequest,
+  ProjectBulkUpsertResponse,
+} from '../types/project';
 
-export interface ListProjectsParams {
-  q?: string;
-  status?: 0 | 1;
+export interface GetProjectsParams {
+  search?: string;
+  status?: number;
   page?: number;
   page_size?: number;
+  sort_by?: string;
+  sort_order?: string;
 }
 
-export async function listProjects(params: ListProjectsParams = {}): Promise<ProjectListItem[]> {
-  const search = new URLSearchParams();
-  if (params.q) search.set("q", params.q);
-  if (params.status !== undefined) search.set("status", String(params.status));
-  if (params.page) search.set("page", String(params.page));
-  if (params.page_size) search.set("page_size", String(params.page_size));
-  const query = search.toString();
-  const path = query ? `/projects?${query}` : "/projects";
-  return apiClient.get<ProjectListItem[]>(path);
-}
+export const projectsApi = {
+  /**
+   * Get projects with pagination, filtering, and sorting
+   */
+  getProjects: async (params: GetProjectsParams = {}) => {
+    const queryParams = apiClient.buildQueryParams(params);
+    return apiClient.get<ProjectPagination>(`/projects${queryParams}`);
+  },
 
+  /**
+   * Get a project by its business key (project_code)
+   */
+  getProject: async (projectCode: string) => {
+    return apiClient.get<Project>(`/projects/${projectCode}`);
+  },
 
+  /**
+   * Create a new project
+   */
+  createProject: async (project: ProjectCreate) => {
+    return apiClient.post<Project>('/projects', project);
+  },
+
+  /**
+   * Update a project by its business key (project_code)
+   */
+  updateProject: async (projectCode: string, project: ProjectUpdate) => {
+    return apiClient.put<Project>(`/projects/${projectCode}`, project);
+  },
+
+  /**
+   * Soft delete a project (set status=0) by its business key (project_code)
+   */
+  deleteProject: async (projectCode: string) => {
+    return apiClient.delete(`/projects/${projectCode}`);
+  },
+
+  /**
+   * Bulk upsert projects by project_code
+   */
+  bulkUpsertProjects: async (request: ProjectBulkUpsertRequest) => {
+    return apiClient.post<ProjectBulkUpsertResponse>('/projects/bulk-upsert', request);
+  },
+};

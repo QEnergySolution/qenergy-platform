@@ -69,9 +69,10 @@ def test_database_url():
 def db_session(test_database_url):
     engine = create_engine(test_database_url, future=True)
     with Session(engine) as session:
-        tx = session.begin()
         try:
             yield session
-        finally:
-            tx.rollback()
+            session.rollback()
+        except Exception:
+            session.rollback()
+            raise
 

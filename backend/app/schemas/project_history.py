@@ -1,33 +1,79 @@
-from typing import Literal
-from pydantic import BaseModel, Field
+from typing import List, Optional
+import uuid
+import datetime
+from datetime import date
+from enum import Enum
+from pydantic import BaseModel, Field, constr
 
 
-EntryType = Literal[
-    "Report",
-    "Issue",
-    "Decision",
-    "Maintenance",
-    "Meeting minutes",
-    "Mid-update",
-]
+class EntryType(str, Enum):
+    REPORT = "Report"
+    ISSUE = "Issue"
+    DECISION = "Decision"
+    MAINTENANCE = "Maintenance"
+    MEETING_MINUTES = "Meeting minutes"
+    MID_UPDATE = "Mid-update"
+
+
+class Category(str, Enum):
+    DEVELOPMENT = "Development"
+    EPC = "EPC"
+    FINANCE = "Finance"
+    INVESTMENT = "Investment"
 
 
 class ProjectHistoryBase(BaseModel):
-    project_code: str = Field(min_length=1, max_length=32)
-    entry_type: EntryType
-    log_date: str
-    summary: str
-    category: Literal["Development", "EPC", "Finance", "Investment"] | None = None
-    cw_label: str | None = Field(default=None, max_length=8)
-    title: str | None = Field(default=None, max_length=255)
-    next_actions: str | None = None
-    owner: str | None = Field(default=None, max_length=255)
-    attachment_url: str | None = Field(default=None, max_length=1024)
-    source_upload_id: str | None = None
-    source_text: str | None = None
+    project_code: constr(min_length=1, max_length=32) = Field(..., description="Project code")
+    category: Optional[str] = Field(None, description="Category (Development, EPC, Finance, Investment)")
+    entry_type: EntryType = Field(..., description="Entry type")
+    log_date: date = Field(..., description="Log date")
+    cw_label: Optional[str] = Field(None, description="Calendar week label (e.g., 'CW01')")
+    title: Optional[str] = Field(None, description="Title")
+    summary: str = Field(..., description="Summary text")
+    next_actions: Optional[str] = Field(None, description="Next actions")
+    owner: Optional[str] = Field(None, description="Owner")
+    attachment_url: Optional[str] = Field(None, description="Attachment URL")
 
 
 class ProjectHistoryCreate(ProjectHistoryBase):
     pass
 
 
+class ProjectHistoryUpdate(BaseModel):
+    category: Optional[str] = Field(None, description="Category (Development, EPC, Finance, Investment)")
+    entry_type: Optional[EntryType] = Field(None, description="Entry type")
+    title: Optional[str] = Field(None, description="Title")
+    summary: Optional[str] = Field(None, description="Summary text")
+    next_actions: Optional[str] = Field(None, description="Next actions")
+    owner: Optional[str] = Field(None, description="Owner")
+    attachment_url: Optional[str] = Field(None, description="Attachment URL")
+
+
+class ProjectHistory(ProjectHistoryBase):
+    id: uuid.UUID
+    source_text: Optional[str] = Field(None, description="Source text")
+    created_at: datetime.datetime
+    created_by: str
+    updated_at: datetime.datetime
+    updated_by: str
+
+    class Config:
+        from_attributes = True
+        json_encoders = {
+            uuid.UUID: lambda v: str(v),
+            datetime.datetime: lambda v: v.isoformat()
+        }
+
+
+class ProjectHistoryPagination(BaseModel):
+    items: List[ProjectHistory]
+    total: int
+    page: int
+    page_size: int
+
+
+class ProjectHistoryContent(BaseModel):
+    project_code: str
+    cw_label: str
+    category: Optional[str] = None
+    content: str

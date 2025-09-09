@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        button {
+            padding: 10px 15px;
+            margin: 10px 0;
+            cursor: pointer;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            overflow: auto;
+            max-height: 400px;
+        }
+        .error {
+            color: red;
+        }
+        .success {
+            color: green;
+        }
+    </style>
+</head>
+<body>
+    <h1>API Connection Test</h1>
+    
+    <div>
+        <h2>Backend API URL</h2>
+        <input type="text" id="apiUrl" value="http://localhost:8002/api" style="width: 300px;">
+    </div>
+    
+    <div>
+        <h2>Test Projects API</h2>
+        <button id="testProjects">Test Projects API</button>
+        <div id="projectsResult"></div>
+    </div>
+    
+    <div>
+        <h2>Test Project History API</h2>
+        <button id="testHistory">Test Project History API</button>
+        <div id="historyResult"></div>
+    </div>
+    
+    <script>
+        document.getElementById('testProjects').addEventListener('click', async () => {
+            const resultDiv = document.getElementById('projectsResult');
+            const apiUrl = document.getElementById('apiUrl').value;
+            
+            resultDiv.innerHTML = '<p>Testing...</p>';
+            
+            try {
+                const response = await fetch(`${apiUrl}/projects?page=1&page_size=5`, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <p class="success">Success! Status: ${response.status}</p>
+                    <p>Total projects: ${data.total}</p>
+                    <p>Items returned: ${data.items.length}</p>
+                    <details>
+                        <summary>View Response</summary>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    </details>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <p class="error">Error: ${error.message}</p>
+                `;
+            }
+        });
+        
+        document.getElementById('testHistory').addEventListener('click', async () => {
+            const resultDiv = document.getElementById('historyResult');
+            const apiUrl = document.getElementById('apiUrl').value;
+            
+            resultDiv.innerHTML = '<p>Testing...</p>';
+            
+            try {
+                const response = await fetch(`${apiUrl}/project-history?page=1&page_size=5`, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <p class="success">Success! Status: ${response.status}</p>
+                    <p>Total records: ${data.total}</p>
+                    <p>Items returned: ${data.items.length}</p>
+                    <details>
+                        <summary>View Response</summary>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    </details>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <p class="error">Error: ${error.message}</p>
+                `;
+            }
+        });
+    </script>
+</body>
+</html>

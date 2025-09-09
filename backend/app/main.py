@@ -21,12 +21,19 @@ from .utils import (
     seed_projects_from_csv,
     get_project_code_by_name_db,
 )
-from sqlalchemy import text
+from .routes import project, project_history, analysis, project_candidates
 
 # Set up logger
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="QEnergy Platform Backend")
+
+# Include routers
+app.include_router(project.router, prefix="/api")
+app.include_router(project_history.router, prefix="/api")
+app.include_router(analysis.router, prefix="/api")
+app.include_router(project_candidates.router, prefix="/api")
+
 @app.on_event("startup")
 def seed_projects():
     """Load `data/project.csv` into DB on startup (idempotent)."""

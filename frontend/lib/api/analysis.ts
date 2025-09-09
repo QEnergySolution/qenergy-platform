@@ -53,7 +53,11 @@ export class AnalysisService {
       created_by: request.created_by || 'frontend-user'
     }
 
-    return await apiClient.post<AnalysisResponse>('reports/analyze', payload)
+    const resp = await apiClient.post<AnalysisResponse>('analysis', payload)
+    if (resp.error || !resp.data) {
+      throw new Error(resp.error || 'Failed to analyze reports')
+    }
+    return resp.data
   }
 
   /**
@@ -73,7 +77,11 @@ export class AnalysisService {
     if (language) params.append('language', language)
     if (category) params.append('category', category)
 
-    return await apiClient.get<AnalysisResult[]>(`weekly-analysis?${params}`)
+    const resp = await apiClient.get<AnalysisResult[]>(`analysis/weekly?${params}`)
+    if (resp.error || !resp.data) {
+      throw new Error(resp.error || 'Failed to fetch analysis results')
+    }
+    return resp.data
   }
 
   /**
@@ -91,7 +99,11 @@ export class AnalysisService {
 
     if (category) params.append('category', category)
 
-    return await apiClient.get<ProjectCandidate[]>(`projects/by-cw-pair?${params}`)
+    const resp = await apiClient.get<ProjectCandidate[]>(`project-candidates?${params}`)
+    if (resp.error || !resp.data) {
+      throw new Error(resp.error || 'Failed to fetch project candidates')
+    }
+    return resp.data
   }
 
   /**

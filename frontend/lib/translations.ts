@@ -1,5 +1,47 @@
 export const translations = {
   en: {
+    // Common
+    fieldRequired: "This field is required",
+    maxLength: "Maximum length is {0} characters",
+    error: "Error",
+    cancel: "Cancel",
+    close: "Close",
+    save: "Save",
+    saving: "Saving...",
+    
+    // Project Management - Excel Upload
+    fileSelected: "File Selected",
+    previewData: "Preview Data",
+    andMoreRows: "And {count} more rows",
+    markMissingAsInactive: "Mark missing projects as inactive",
+    uploadSuccess: "Upload Successful",
+    uploadFailed: "Upload Failed",
+    createdCount: "Created",
+    updatedCount: "Updated",
+    inactivatedCount: "Marked as Inactive",
+    errorsFound: "{count} errors found",
+    row: "Row",
+    andMoreErrors: "And {count} more errors",
+    downloadErrors: "Download Errors",
+    unknownError: "An unknown error occurred",
+    noDataInFile: "No data found in file",
+    missingColumns: "Missing required columns",
+    errorParsingFile: "Error parsing file",
+    projectCodeExists: "Project code already exists",
+    
+    // Project Management - Status
+    failedToLoadProjects: "Failed to load projects",
+    loading: "Loading",
+    statusUpdated: "Status Updated",
+    projectMarkedActive: "Project {code} marked as active",
+    projectMarkedInactive: "Project {code} marked as inactive",
+    failedToUpdateStatus: "Failed to update project status",
+    projectAdded: "Project Added",
+    projectAddedSuccess: "Project {code} added successfully",
+    failedToAddProject: "Failed to add project",
+    projectsRemoved: "Projects Removed",
+    projectsRemovedSuccess: "{count} projects removed successfully",
+    failedToRemoveProjects: "Failed to remove {count} projects",
     // Sidebar
     admin: "Admin",
     projectManagement: "Project Management",

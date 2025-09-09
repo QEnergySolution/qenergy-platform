@@ -268,7 +268,10 @@ Goal: Integrate report analysis with project management and connect frontend to 
   - `GET /api/projects` (pagination, search by `project_code|project_name|portfolio_cluster`, filter `status`)
   - `POST /api/projects` (create)
   - `PUT /api/projects/{project_code}` (update by business key)
-  - `DELETE /api/projects/{project_code}` (delete by business key)
+  - `DELETE /api/projects/{project_code}` → Soft delete (set `status=0`, business key)
+  - Status semantics: `status∈{0,1}`; `1=Active`, `0=Inactive`（UI 显示为布尔开关）
+  - Sorting: `sort_by∈{project_code,project_name,portfolio_cluster,status,updated_at}`, `sort_order∈{asc,desc}`（默认 `updated_at desc`）
+  - Pagination: `page`, `page_size`（默认 20）；响应 `{items,total,page,page_size}`
   - Complete SQLAlchemy models for `projects` and `project_history`
 - [ ] Backend: Project History API
   - `GET /api/project-history` (filters: `project_code`, CW range, `category`)
@@ -290,23 +293,25 @@ Goal: Integrate report analysis with project management and connect frontend to 
   - `GET /api/integrations/ppm/projects?date=YYYY-MM-DD` (use Monday of CW)
   - Env: `QENERGY_PPM_API_KEY`, base URL; enforce TLS verification
 - [ ] Frontend: Project Management UX (per spec)
-  - Search box (debounced) over `project_code|project_name|portfolio_cluster`; toggle \"Show Active Only\"
+  - Search box (debounced) over `project_code|project_name|portfolio_cluster`; toggle \"Show Active Only\"（过滤 `status=1`）
   - Table: columns (Code|Name|Portfolio|Status pill), row selection via checkbox
-  - Server-side sorting by any visible column; server-side pagination (default 20; remember last page size)
-  - Actions: Add Project modal (validations; server conflict shows field error); Remove Selected with confirm; Upload Excel → Bulk Replace flow
-- [ ] Backend: Projects Bulk Replace (Excel/CSV)
-  - Validate entire file (schema, required fields, status 0/1, duplicates)
-  - On any row invalid → no change; return per-row error list (downloadable)
-  - On all valid → delete all and insert all (replace-all); server sets timestamps; ignore client timestamps
+  - Server-side sorting by `sort_by`/`sort_order`（字段白名单）；server-side pagination（默认 20；记忆页大小）
+  - Actions: Add Project modal（校验 + 唯一性冲突显示字段错误）；Remove Selected（软删除，将项目置为 Inactive，带确认）；Upload Excel → Bulk Upsert（按 `project_code` 合并）
+- [ ] Backend: Projects Bulk Upsert (Excel/CSV)
+  - Validate entire file（schema、必填字段、`status∈{0,1}`、重复项）
+  - 任一行无效 → 不做变更；返回逐行错误（可下载）
+  - 全部有效 → 按 `project_code` 逐行 UPSERT：存在则更新（`project_name`,`portfolio_cluster`,`status`），不存在则插入
+  - 同步缺失策略：未出现在文件中的项目可选标记为 `status=0`（可配置开关），不做物理删除
+  - 服务器统一设置审计字段与时间戳；忽略客户端时间戳
 
 Acceptance for Phase 3:
 - Project list renders with real database data
 - Frontend successfully communicates with backend; CORS and API prefix configured
 - E2E smoke: upload → analyze → view flow works end-to-end
 - CW-based filtering works
-- Create/update/delete operations persist
+- Create/update/delete operations persist（删除为软删除：`status=0`）
 - Error logging enabled and visible; basic unit/integration tests pass
- - Project Management supports search/sort/pagination, add modal, bulk delete, and bulk replace with per-row error reporting
+ - Project Management supports search/sort/pagination, add modal, bulk soft delete, and bulk upsert with per-row error reporting
 
 ---
 
