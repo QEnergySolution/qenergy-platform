@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -8,8 +8,9 @@ from ..schemas.analysis import (
     AnalysisResponse,
     WeeklyReportAnalysisRead,
     Language,
-    Category
+    Category,
 )
+from ..services.analysis_service import AnalysisService
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -19,83 +20,61 @@ async def analyze_reports(
     request: AnalysisRequest,
     db: Session = Depends(get_db)
 ):
-    """
-    Analyze reports between two calendar weeks.
-    """
-    # This is a mock implementation - in a real system, you would:
-    # 1. Fetch the reports for the specified calendar weeks
-    # 2. Analyze them using LLM or other methods
-    # 3. Store the results in the database
-    # 4. Return the analysis results
-    
-    # For now, we'll return a mock response
-    mock_results = []
-    for i in range(1, 6):  # Mock 5 results
-        mock_results.append(
-            WeeklyReportAnalysisRead(
-                id=f"mock-id-{i}",
-                project_code=f"2ES0000{i}",
-                project_name=f"Mock Project {i}",
-                cw_label=request.latest_cw,
-                language=request.language,
-                category=request.category,
-                risk_lvl=50.0 + i * 5,
-                risk_desc=f"This is a mock risk description for project {i}",
-                similarity_lvl=70.0 - i * 5,
-                similarity_desc=f"This is a mock similarity description for project {i}",
-                negative_words={"words": ["delay", "issue", "problem"], "count": 3},
-                past_content=f"Mock past content for project {i}",
-                latest_content=f"Mock latest content for project {i}",
-                created_at="2025-09-09T12:00:00Z",
-                created_by=request.created_by
-            )
+    """Analyze all candidate projects between two CWs using real AnalysisService."""
+    service = AnalysisService()
+
+    candidates = service.get_projects_by_cw_pair(
+        db=db,
+        past_cw=request.past_cw,
+        latest_cw=request.latest_cw,
+        category=request.category,
+    )
+
+    analyzed: List[WeeklyReportAnalysisRead] = []
+    analyzed_count = 0
+    skipped_count = 0
+
+    language: Language = request.language or "EN"  # type: ignore
+
+    for c in candidates:
+        project_code = c.get("project_code")
+        if not project_code:
+            skipped_count += 1
+            continue
+        result, was_created = await service.analyze_project_pair(
+            db=db,
+            project_code=project_code,
+            past_cw=request.past_cw,
+            latest_cw=request.latest_cw,
+            language=language,
+            category=request.category,
+            created_by=request.created_by or "system",
         )
-    
+        analyzed.append(result)
+        analyzed_count += 1 if was_created else 0
+
     return AnalysisResponse(
-        message="Analysis completed successfully",
-        analyzed_count=len(mock_results),
-        skipped_count=0,
-        results=mock_results
+        message="Analysis completed",
+        analyzed_count=analyzed_count,
+        skipped_count=skipped_count,
+        results=analyzed,
     )
 
 
 @router.get("/weekly", response_model=List[WeeklyReportAnalysisRead])
-async def get_analysis_results(
+def get_analysis_results(
     past_cw: str = Query(..., description="Past calendar week (e.g., CW31)"),
     latest_cw: str = Query(..., description="Latest calendar week (e.g., CW32)"),
     language: Optional[Language] = Query(None, description="Language code"),
     category: Optional[Category] = Query(None, description="Report category"),
     db: Session = Depends(get_db)
 ):
-    """
-    Get existing analysis results for the specified calendar weeks.
-    """
-    # This is a mock implementation - in a real system, you would:
-    # 1. Query the database for existing analysis results
-    # 2. Filter by the specified parameters
-    # 3. Return the results
-    
-    # For now, we'll return a mock response
-    mock_results = []
-    for i in range(1, 6):  # Mock 5 results
-        mock_results.append(
-            WeeklyReportAnalysisRead(
-                id=f"mock-id-{i}",
-                project_code=f"2ES0000{i}",
-                project_name=f"Mock Project {i}",
-                cw_label=latest_cw,
-                language=language or "EN",
-                category=category,
-                risk_lvl=50.0 + i * 5,
-                risk_desc=f"This is a mock risk description for project {i}",
-                similarity_lvl=70.0 - i * 5,
-                similarity_desc=f"This is a mock similarity description for project {i}",
-                negative_words={"words": ["delay", "issue", "problem"], "count": 3},
-                past_content=f"Mock past content for project {i}",
-                latest_content=f"Mock latest content for project {i}",
-                created_at="2025-09-09T12:00:00Z",
-                created_by="system"
-            )
-        )
-    
-    return mock_results
+    """Fetch existing analysis results from DB using real AnalysisService."""
+    service = AnalysisService()
+    return service.get_analysis_results(
+        db=db,
+        past_cw=past_cw,
+        latest_cw=latest_cw,
+        language=language,
+        category=category,
+    )

@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { FileText, Play, Square, Download, ArrowUpDown, ChevronUp, ChevronDown, MessageSquare, X } from "lucide-react"
 import { useLanguage } from "@/hooks/use-language"
 import { analysisService } from "@/lib/api/analysis"
-import { getProjectHistory } from "@/lib/api/reports"
+import { getCwLabelsForYear } from "@/lib/api/reports"
 import { useToast } from "@/hooks/use-toast"
 
 interface AnalysisResult {
@@ -104,20 +104,17 @@ export function WeeklyReport() {
     }
   }, [currentYear])
 
-  // Load available weeks for the chosen years and category
+  // Load available weeks for the chosen years and category (paginate to collect all weeks)
   useEffect(() => {
     const loadAvailableWeeks = async (year: string | null) => {
       if (!year) return
       try {
-        const resp = await getProjectHistory({
-          year: Number.parseInt(year),
-          // If category is "all" we don't filter so that any week with any data is enabled
-          category: selectedCategory && selectedCategory !== "all" ? selectedCategory : undefined,
-        })
-        const weekSet = new Set<string>(resp.projectHistory.map((r) => r.cwLabel))
-        setAvailableWeeksByYear((prev) => ({ ...prev, [year]: weekSet }))
+        const labels = await getCwLabelsForYear(
+          Number.parseInt(year),
+          selectedCategory && selectedCategory !== "all" ? selectedCategory : undefined
+        )
+        setAvailableWeeksByYear((prev) => ({ ...prev, [year]: labels }))
       } catch {
-        // On error, leave weeks disabled by default for safety
         setAvailableWeeksByYear((prev) => ({ ...prev, [year]: new Set() }))
       }
     }

@@ -316,7 +316,7 @@ def test_bulk_upsert_projects(db_session):
     assert response.status_code == 200
     data = response.json()
     assert data["success"] is True
-    # 注意：API测试中不应该依赖于具体的实现细节，只需验证操作成功即可
+    # Note: API tests should not depend on specific implementation details, just verify operation success
     assert data["created_count"] >= 0
     assert data["updated_count"] >= 0
     assert data["created_count"] + data["updated_count"] > 0
@@ -409,7 +409,7 @@ def test_bulk_upsert_mark_missing(db_session):
     assert response.status_code == 200
     data = response.json()
     assert data["success"] is True
-    # 注意：API测试中不应该依赖于具体的实现细节，只需验证操作成功即可
+    # Note: API tests should not depend on specific implementation details, just verify operation success
     assert data["created_count"] >= 0
     assert data["updated_count"] >= 0
     assert data["inactivated_count"] >= 0

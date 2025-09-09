@@ -14,7 +14,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { getProjectHistory, type ProjectHistoryFilters } from "@/lib/api/reports"
+import { getProjectHistory, getCwLabelsForYear, type ProjectHistoryFilters } from "@/lib/api/reports"
 
 interface ReportData {
   id: string
@@ -160,11 +160,11 @@ export function ReportUpload() {
     const loadAvailableWeeks = async () => {
       if (!selectedYear) return
       try {
-        const response = await getProjectHistory({
-          year: parseInt(selectedYear),
-          category: selectedCategory && selectedCategory !== "all" ? selectedCategory : undefined,
-        })
-        setAvailableWeeks(new Set(response.projectHistory.map((r) => r.cwLabel)))
+        const labels = await getCwLabelsForYear(
+          parseInt(selectedYear),
+          selectedCategory && selectedCategory !== "all" ? selectedCategory : undefined,
+        )
+        setAvailableWeeks(labels)
       } catch {
         setAvailableWeeks(new Set())
       }
@@ -656,7 +656,7 @@ export function ReportUpload() {
             size="lg"
           >
             <History className="w-4 h-4 mr-2" />
-            report upload history
+            View Report Upload History
           </Button>
           <Button
             onClick={() => {
@@ -852,12 +852,12 @@ export function ReportUpload() {
                 {activeTab === 'upload' ? (
                   <>
                     <Upload className="w-6 h-6" />
-                    <h2 className="text-xl font-bold">报告上传</h2>
+                    <h2 className="text-xl font-bold">Report Upload</h2>
                   </>
                 ) : (
                   <>
                     <History className="w-6 h-6" />
-                    <h2 className="text-xl font-bold">上传历史</h2>
+                    <h2 className="text-xl font-bold">Upload History</h2>
                   </>
                 )}
                 <span className="px-3 py-1 bg-primary text-primary-foreground rounded-md text-sm font-medium">
@@ -880,7 +880,7 @@ export function ReportUpload() {
                 }`}
               >
                 <Upload className="w-4 h-4 mr-2 inline" />
-                报告上传
+                Report Upload
               </button>
               <button
                 onClick={() => {
@@ -894,7 +894,7 @@ export function ReportUpload() {
                 }`}
               >
                 <History className="w-4 h-4 mr-2 inline" />
-                上传历史
+                Upload History
               </button>
             </div>
 
@@ -979,13 +979,13 @@ export function ReportUpload() {
                           {processingStatus[uploadFiles[category]?.name || ""] === "pending" && (
                             <div className="flex items-center gap-2 text-yellow-600 text-sm">
                               <AlertCircle className="w-3 h-3" />
-                              等待用户确认
+                              Awaiting User Confirmation
                             </div>
                           )}
                           {processingStatus[uploadFiles[category]?.name || ""] === "cancelled" && (
                             <div className="flex items-center gap-2 text-gray-600 text-sm">
                               <X className="w-3 h-3" />
-                              已取消
+                              Cancelled
                             </div>
                           )}
                         </div>
@@ -1254,7 +1254,7 @@ export function ReportUpload() {
                             className="w-full"
                           >
                             <Eye className="w-4 h-4 mr-2" />
-                            查看详细历史
+                            View Detailed History
                           </Button>
                           
                           {selectedUpload?.id === upload.id && (
@@ -1387,7 +1387,7 @@ export function ReportUpload() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertCircle className="w-5 h-5 text-yellow-500" />
-              文件重复警告
+              File Duplicate Warning
             </DialogTitle>
             <DialogDescription>
               {duplicateFileDialog.duplicateInfo?.message}
@@ -1398,19 +1398,19 @@ export function ReportUpload() {
             <div className="space-y-4">
               <div className="bg-yellow-50 p-3 rounded-md border border-yellow-200">
                 <p className="text-sm font-medium text-yellow-800">
-                  已存在的文件:
+                  Existing File:
                 </p>
                 <p className="text-sm text-yellow-700">
                   📁 {duplicateFileDialog.duplicateInfo.existingFile.filename}
                 </p>
                 <p className="text-xs text-yellow-600">
-                  上传时间: {new Date(duplicateFileDialog.duplicateInfo.existingFile.uploadedAt).toLocaleString()}
+                  Upload Time: {new Date(duplicateFileDialog.duplicateInfo.existingFile.uploadedAt).toLocaleString()}
                 </p>
               </div>
               
               <div className="bg-blue-50 p-3 rounded-md border border-blue-200">
                 <p className="text-sm font-medium text-blue-800">
-                  当前文件:
+                  Current File:
                 </p>
                 <p className="text-sm text-blue-700">
                   📁 {duplicateFileDialog.duplicateInfo.currentFile.filename}
@@ -1424,7 +1424,7 @@ export function ReportUpload() {
                   variant="default"
                 >
                   <RefreshCw className="w-4 h-4 mr-2" />
-                  继续导入 (覆盖重复数据)
+                  Continue Import (Overwrite Duplicate Data)
                 </Button>
                 <Button 
                   onClick={() => handleDuplicateConfirm(false)}
@@ -1432,7 +1432,7 @@ export function ReportUpload() {
                   variant="outline"
                 >
                   <X className="w-4 h-4 mr-2" />
-                  取消导入
+                  Cancel Import
                 </Button>
               </div>
             </div>

@@ -18,11 +18,16 @@ export class ApiClient {
   private headers: Record<string, string>;
 
   constructor(options: ApiClientOptions = {}) {
-    this.baseUrl = options.baseUrl || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002/api';
+    // Make sure baseUrl doesn't end with a slash to avoid double slashes in paths
+    const baseUrl = options.baseUrl || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002/api';
+    this.baseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    
     this.headers = {
       'Content-Type': 'application/json',
       ...options.headers,
     };
+    
+    console.log('API Client initialized with baseUrl:', this.baseUrl);
   }
 
   private async request<T>(
@@ -31,8 +36,12 @@ export class ApiClient {
     data?: any,
     customHeaders?: Record<string, string>
   ): Promise<ApiResponse<T>> {
-    const url = `${this.baseUrl}${path}`;
+    // Ensure path starts with a slash if not already
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    const url = `${this.baseUrl}${normalizedPath}`;
     const headers = { ...this.headers, ...customHeaders };
+    
+    console.log(`API Request: ${method} ${url}`);
 
     try {
       const response = await fetch(url, {

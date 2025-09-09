@@ -1,63 +1,63 @@
-# 报告界面重构测试
+# Report UI Refactoring Test
 
-## ✅ 完成的重构内容
+## ✅ Completed Refactoring Content
 
-### 1. 界面结构变更
-- **移除**: 原来在报告列表下方的"Report Uploads History"表格
-- **新增**: 右上角"查看report上传历史"按钮
-- **新增**: 右上角报告上传按钮（原有功能保持）
+### 1. UI Structure Changes
+- **Removed**: Original "Report Uploads History" table below the report list
+- **Added**: "View Report Upload History" button in the top-right corner
+- **Added**: Report upload button in the top-right corner (original functionality preserved)
 
-### 2. 统一侧边栏系统
-- **标签式设计**: 两个标签页
-  - 📤 **报告上传**: 原有的上传功能
-  - 📋 **上传历史**: 原有的历史查看功能
-- **折叠按钮**: 右侧边缘的折叠按钮 (PanelRightClose 图标)
+### 2. Unified Sidebar System
+- **Tab-based Design**: Two tabs
+  - 📤 **Report Upload**: Original upload functionality
+  - 📋 **Upload History**: Original history viewing functionality
+- **Collapse Button**: Collapse button at the right edge (PanelRightClose icon)
 
-### 3. 功能完整性
-- ✅ 报告上传功能完全保留
-- ✅ LLM解析开关保留
-- ✅ 批量上传功能保留
-- ✅ 文件重复检测保留
-- ✅ 上传历史查看功能保留
-- ✅ 项目历史详情查看保留
+### 3. Functional Completeness
+- ✅ Report upload functionality fully preserved
+- ✅ LLM parsing switch preserved
+- ✅ Bulk upload functionality preserved
+- ✅ File duplicate detection preserved
+- ✅ Upload history viewing functionality preserved
+- ✅ Project history details viewing preserved
 
-## 🎯 测试步骤
+## 🎯 Testing Steps
 
-1. **访问报告页面**
-   - 打开 http://localhost:3002
-   - 导航到报告上传页面
+1. **Access Report Page**
+   - Open http://localhost:3002
+   - Navigate to the report upload page
 
-2. **测试右上角按钮**
-   - 点击"查看report上传历史"按钮 → 应该打开右侧抽屉，显示上传历史标签页
-   - 点击"报告上传"按钮 → 应该打开右侧抽屉，显示报告上传标签页
+2. **Test Top-Right Buttons**
+   - Click "View Report Upload History" button → Should open right drawer, display upload history tab
+   - Click "Report Upload" button → Should open right drawer, display report upload tab
 
-3. **测试标签页切换**
-   - 在侧边栏中点击"报告上传"标签 → 应该显示上传界面
-   - 在侧边栏中点击"上传历史"标签 → 应该显示历史记录
+3. **Test Tab Switching**
+   - Click "Report Upload" tab in sidebar → Should display upload interface
+   - Click "Upload History" tab in sidebar → Should display history records
 
-4. **测试折叠功能**
-   - 点击右侧边缘的折叠按钮 → 侧边栏应该关闭
-   - 点击背景遮罩 → 侧边栏应该关闭
-   - 点击标题栏的X按钮 → 侧边栏应该关闭
+4. **Test Collapse Functionality**
+   - Click collapse button at right edge → Sidebar should close
+   - Click background overlay → Sidebar should close
+   - Click X button in title bar → Sidebar should close
 
-5. **测试功能完整性**
-   - 在"报告上传"标签页中测试文件上传
-   - 在"上传历史"标签页中测试历史查看
-   - 点击"查看详细历史"应该展开项目详情
+5. **Test Functional Completeness**
+   - Test file upload in "Report Upload" tab
+   - Test history viewing in "Upload History" tab
+   - Clicking "View Detailed History" should expand project details
 
-## 🎨 UI改进点
+## 🎨 UI Improvement Points
 
-1. **空间利用更高效**: 主界面不再被历史表格占用
-2. **操作更直观**: 右上角按钮明确表达功能意图
-3. **标签式导航**: 清晰的功能分区
-4. **响应式设计**: 侧边栏占用90vw宽度，适配不同屏幕
-5. **交互反馈**: hover效果、加载状态、错误提示保持完整
+1. **More Efficient Space Usage**: Main interface no longer occupied by history table
+2. **More Intuitive Operations**: Top-right buttons clearly express functional intent
+3. **Tab-based Navigation**: Clear functional partitioning
+4. **Responsive Design**: Sidebar occupies 90vw width, adapts to different screens
+5. **Interactive Feedback**: Hover effects, loading states, error prompts remain complete
 
-## 📱 响应式特性
+## 📱 Responsive Features
 
-- **宽屏设备**: 侧边栏占用90%视口宽度
-- **移动设备**: 全屏抽屉体验
-- **折叠按钮**: 提供快速收起功能
-- **滚动支持**: 内容区域独立滚动
+- **Wide Screen Devices**: Sidebar occupies 90% viewport width
+- **Mobile Devices**: Full-screen drawer experience
+- **Collapse Button**: Provides quick collapse functionality
+- **Scroll Support**: Content area scrolls independently
 
-这个重构保持了所有原有功能，同时提供了更清晰的用户界面和更好的空间利用率。
+This refactoring maintains all original functionality while providing a clearer user interface and better space utilization.

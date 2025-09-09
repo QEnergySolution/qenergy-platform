@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # QEnergy Platform Database Cleanup Script
-# 清空数据库中的所有数据，保留schema结构
+# Clear all data in the database, keep schema structure
 
 set -e
 

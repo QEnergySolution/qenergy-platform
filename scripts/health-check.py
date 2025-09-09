@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-QEnergy Platform Health Check Script (Python版本)
+QEnergy Platform Health Check Script (Python version)
 Health check windows
 """
 

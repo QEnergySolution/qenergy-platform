@@ -580,35 +580,8 @@ async def persist_upload_to_database(
         logger.error(f"Failed to parse filename '{filename}': {e}")
         return _error("INVALID_NAME", f"Filename '{filename}' must contain a calendar week (e.g., CW01) and category (DEV, EPC, FINANCE, or INVESTMENT). Details: {str(e)}")
     
-    # Check for duplicate file if not forcing import
-    if not force_import:
-        content = await file.read()
-        sha256_hash = hashlib.sha256(content).hexdigest()
-        
-        existing = db.execute(
-            text("SELECT id, original_filename, uploaded_at, status FROM report_uploads WHERE sha256 = :sha256"),
-            {"sha256": sha256_hash}
-        ).first()
-        
-        if existing:
-            return {
-                "status": "duplicate_detected",
-                "message": f"file '{filename}' has been imported",
-                "isDuplicate": True,
-                "existingFile": {
-                    "id": existing.id,
-                    "filename": existing.original_filename,
-                    "uploadedAt": existing.uploaded_at.isoformat(),
-                    "status": existing.status
-                },
-                "currentFile": {
-                    "filename": filename,
-                    "sha256": sha256_hash
-                }
-            }
-        
-        # Reset file position for later processing
-        await file.seek(0)
+    # If not forcing import, we still allow reuse of existing upload via importer logic.
+    # So we don't block here; we only compute sha for logging/debug if needed.
     
     # Create task for tracking
     task_id = task_queue.create_task(filename, use_llm)

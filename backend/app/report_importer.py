@@ -74,22 +74,23 @@ def _create_or_get_upload_record(
         category = "Unknown"
         log_date = date.today()
     
-    # Check if upload already exists by SHA256 (unless forcing import)
-    if not force_import:
-        existing = db.execute(
-            text("SELECT id, status FROM report_uploads WHERE sha256 = :sha256"),
-            {"sha256": file_hash}
-        ).first()
-        
-        if existing:
-            logger.info(f"File already uploaded with ID: {existing.id}")
-            return {
-                "upload_id": existing.id,
-                "is_new": False,
-                "cw_label": cw_label,
-                "category": category,
-                "log_date": log_date
-            }
+    # Check if upload already exists by SHA256 (always check to avoid unique errors)
+    existing = db.execute(
+        text("SELECT id, status FROM report_uploads WHERE sha256 = :sha256"),
+        {"sha256": file_hash}
+    ).first()
+
+    if existing:
+        logger.info(f"File already uploaded with ID: {existing.id}")
+        # If force_import, reuse existing upload record to allow reprocessing
+        # If not forcing, also return existing to signal duplicate
+        return {
+            "upload_id": existing.id,
+            "is_new": False,
+            "cw_label": cw_label,
+            "category": category,
+            "log_date": log_date
+        }
     
     # Create new upload record
     result = db.execute(
@@ -163,7 +164,7 @@ def import_single_docx_simple_with_metadata(
     log_date = upload_info["log_date"]
     
     # If this is an existing upload, check if we should skip processing
-    if not upload_info["is_new"]:
+    if not upload_info["is_new"] and not force_import:
         # Count existing project history records
         existing_count = db.execute(
             text("SELECT COUNT(*) FROM project_history WHERE source_upload_id = :upload_id"),
@@ -463,7 +464,7 @@ def import_single_docx_llm_with_metadata(
     log_date = upload_info["log_date"]
     
     # If this is an existing upload, check if we should skip processing
-    if not upload_info["is_new"]:
+    if not upload_info["is_new"] and not force_import:
         existing_count = db.execute(
             text("SELECT COUNT(*) FROM project_history WHERE source_upload_id = :upload_id"),
             {"upload_id": upload_id}

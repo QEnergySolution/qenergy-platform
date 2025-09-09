@@ -356,10 +356,10 @@ def test_bulk_upsert_create_and_update(db_session):
 
 @pytest.mark.skip(reason="Mock method issue, fix later")
 def test_bulk_upsert_with_errors(db_session):
-    # 让我们简化这个测试，只测试错误处理功能
+    # Let's simplify this test, only test error handling functionality
     repo = ProjectRepository(db_session)
     
-    # 创建一个测试项目
+    # Create a test project
     project_data = ProjectCreate(
         project_code="BULK003",
         project_name="Another Initial Project",
@@ -368,9 +368,9 @@ def test_bulk_upsert_with_errors(db_session):
     repo.create(project_data, "test_user")
     db_session.flush()
     
-    # 准备一个会导致错误的数据
+    # Prepare data that will cause an error
     bulk_data = [
-        # 有效的更新
+        # Valid update
         ProjectBulkUpsertRow(
             project_code="BULK003",
             project_name="Valid Update",
@@ -378,22 +378,22 @@ def test_bulk_upsert_with_errors(db_session):
         )
     ]
     
-    # 修改仓库方法来模拟错误
+    # Modify repository method to simulate error
     original_create = repo.create
     
     def mock_create(project_data, created_by):
-        # 如果是第一次调用，返回正常结果
-        # 如果是第二次调用，抛出错误
+        # If first call, return normal result
+        # If second call, throw error
         if not hasattr(mock_create, "called"):
             mock_create.called = True
             return original_create(project_data, created_by)
         else:
             raise ValueError("Simulated error for testing")
     
-    # 替换方法
+    # Replace method
     repo.create = mock_create
     
-    # 添加一个会导致错误的项目
+    # Add a project that will cause an error
     bulk_data.append(
         ProjectBulkUpsertRow(
             project_code="BULK999",
@@ -402,17 +402,17 @@ def test_bulk_upsert_with_errors(db_session):
         )
     )
     
-    # 执行批量更新
+    # Execute bulk update
     result = repo.bulk_upsert(bulk_data, "bulk_user")
     
-    # 恢复原始方法
+    # Restore original method
     repo.create = original_create
     
-    # 验证结果显示错误
+    # Verify result shows error
     assert len(result["errors"]) > 0
     assert "simulated error" in result["errors"][0]["error_message"].lower()
     
-    # 验证有效的更新已经生效
+    # Verify valid updates have taken effect
     updated = repo.get_by_code("BULK003")
     assert updated.project_name == "Valid Update"
 

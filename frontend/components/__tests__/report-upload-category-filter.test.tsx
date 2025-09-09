@@ -25,7 +25,7 @@ jest.mock('@/hooks/use-language', () => ({
         selectWeek: 'Select Week (CW)',
         selectCategory: 'Select Category',
         allCategories: 'All Categories',
-        reportList: 'Report List',
+        reportList: 'Project History',
         refresh: 'Refresh',
         loading: 'Loading',
         selectYearAndWeek: 'Please select year and week',
