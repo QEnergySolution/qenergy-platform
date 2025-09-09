@@ -175,7 +175,7 @@ Goal: Create/save weekly reports via cards with correct CW logic.
   - Service layer (`frontend/lib/api/reports.ts`) + unit tests
 
 Acceptance for Phase 2C:
-- Saving creates/updates by (project_code, log_date) with correct cw_label
+- Saving creates/updates by (project_code, log_date, catagory) with correct cw_label
 - Validation errors surfaced per card; unit tests pass
 
 ---

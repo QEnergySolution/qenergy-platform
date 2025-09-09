@@ -25,7 +25,7 @@ GLOBE="🌐"
 GEAR="⚙️"
 
 # Configuration
-FRONTEND_URL="http://localhost:3001"
+FRONTEND_URL="http://localhost:3000"
 BACKEND_URL="http://localhost:8002"
 POSTGRES_DB="qenergy_platform"
 POSTGRES_USER="yuxin.xue"
