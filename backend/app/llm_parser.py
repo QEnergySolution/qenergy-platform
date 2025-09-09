@@ -65,20 +65,103 @@ def _clean_text(s: str) -> str:
     return s.strip()
 
 
+from typing import Iterator, List
+from docx import Document
+from docx.document import Document as _Document
+from docx.table import _Cell, Table
+from docx.text.paragraph import Paragraph
+
+def iter_block_items(parent) -> Iterator:
+    """
+    Yield block-level items (Paragraph or Table) from a parent element
+    while preserving the original document order. The parent can be a
+    Document or a table Cell.
+    """
+    if isinstance(parent, _Document):
+        parent_elm = parent.element.body
+    elif isinstance(parent, _Cell):
+        parent_elm = parent._tc
+    else:
+        raise TypeError("Unsupported parent type")
+    for child in parent_elm.iterchildren():
+        if child.tag.endswith('tbl'):
+            yield Table(child, parent)
+        elif child.tag.endswith('p'):
+            yield Paragraph(child, parent)
+
+def _is_list_like(par: Paragraph) -> bool:
+    """
+    Heuristic: treat the paragraph as a list item if it uses numbering (numPr)
+    or its style name suggests a list/bullet.
+    """
+    # numPr detection (robust even if pPr is missing)
+    try:
+        pPr = par._p.pPr  # noqa: SLF001
+        if pPr is not None and pPr.numPr is not None:
+            return True
+    except Exception:
+        pass
+    # style name hint
+    try:
+        name = (par.style.name or "").lower()
+        if "list" in name or "bullet" in name:
+            return True
+    except Exception:
+        pass
+    return False
+
+def _normalize_list_prefix(text: str) -> str:
+    """
+    Ensure a consistent '- ' prefix for list-like paragraphs, unless they
+    already start with a common bullet/numbering mark.
+    """
+    if not text:
+        return text
+    leading = text.lstrip()
+    # common bullet/numbering starters to avoid double-prefixing
+    common_starters = ("- ", "* ", "• ", "· ", "◦ ", "– ", "— ", "1. ", "a) ", "(1) ")
+    if any(leading.startswith(s) for s in common_starters):
+        return text
+    return "- " + text
+
+def _collect_paragraph_texts(container) -> List[str]:
+    """
+    Collect non-empty paragraph texts from a container (Document/header/footer),
+    preserving order and skipping tables.
+    """
+    parts: List[str] = []
+    for block in iter_block_items(container):
+        if isinstance(block, Paragraph):
+            t = (block.text or "").strip()
+            if t:
+                # normalize list items
+                if _is_list_like(block):
+                    t = _normalize_list_prefix(t)
+                parts.append(t)
+    return parts
+
 def _load_doc_text(file_path: str) -> str:
+    """
+    Load visible paragraph text from a .docx file, skipping tables,
+    preserving order, normalizing list items, and returning a single
+    lower-cased string cleaned by _clean_text (same I/O contract as original).
+    """
     d = Document(file_path)
     parts: List[str] = []
-    for p in d.paragraphs:
-        t = (p.text or "").strip()
-        if t:
-            parts.append(t)
-    for table in d.tables:
-        for row in table.rows:
-            cells = [ (cell.text or "").strip() for cell in row.cells ]
-            cells = [c for c in cells if c]
-            if cells:
-                parts.append(" | ".join(cells))
+
+    # main body
+    parts.extend(_collect_paragraph_texts(d))
+
+    # headers/footers (optional but useful; still skipping tables)
+    for section in d.sections:
+        for hf in (section.header, section.footer):
+            if hf is not None:
+                parts.extend(_collect_paragraph_texts(hf))
+
+    # keep the original output contract:
+    # join with '\n', lower-case, then clean
     return _clean_text("\n".join(parts).lower())
+
 
 
 def _azure_chat_completion(

@@ -8,6 +8,11 @@ Method:
 - Near-boundary merge: if two project mentions are too close, extend first section to the third boundary
   and duplicate for the second project, so both get the same source_text.
 """
+FUZZY_THRESHOLD_PROJECT_ALIAS = 70      # _find_alias_mentions for projects
+FUZZY_THRESHOLD_CLUSTER_ALIAS = 80      # _find_alias_mentions for clusters
+FUZZY_THRESHOLD_PROJECT_GENERIC = 80    # _find_generic_pattern_mentions projects
+FUZZY_THRESHOLD_CLUSTER_GENERIC = 80    # _find_generic_pattern_mentions clusters
+FUZZY_THRESHOLD_FINAL_GUARD = 80        # final check in parse_docx_rows
 
 import csv
 import logging
@@ -236,7 +241,7 @@ def _find_alias_mentions(full_text: str,
             start, end = m.span()
             raw = full_text[start:end]
             best = process.extractOne(raw, project_names, scorer=fuzz.token_set_ratio)
-            if best and best[1] >= 90:
+            if best and best[1] >= FUZZY_THRESHOLD_PROJECT_ALIAS:
                 mentions.append((start, raw, [best[0]], "project"))
             else:
                 debug_unmatched.append(raw)
@@ -248,7 +253,7 @@ def _find_alias_mentions(full_text: str,
             start, end = m.span()
             raw = full_text[start:end]
             best = process.extractOne(raw, cluster_list, scorer=fuzz.token_set_ratio)
-            if best and best[1] >= 88:
+            if best and best[1] >= FUZZY_THRESHOLD_CLUSTER_ALIAS:
                 expanded = cluster_to_projects.get(best[0], [])
                 if expanded:
                     mentions.append((start, raw, list(expanded), "cluster"))
@@ -260,8 +265,8 @@ def _find_alias_mentions(full_text: str,
 def _find_generic_pattern_mentions(full_text: str,
                                    project_names: List[str],
                                    cluster_to_projects: Dict[str, List[str]],
-                                   fuzzy_threshold_project: int = 86,
-                                   fuzzy_threshold_cluster: int = 84
+                                   fuzzy_threshold_project: int = FUZZY_THRESHOLD_PROJECT_GENERIC,
+                                   fuzzy_threshold_cluster: int = FUZZY_THRESHOLD_CLUSTER_GENERIC
                                    ) -> Tuple[List[Tuple[int, str, List[str], str]], List[Tuple[str, int, int]]]:
     """
     Generic patterns like:
@@ -467,7 +472,7 @@ def parse_docx_rows(file: UploadFile, cw_label: str, category: str) -> list[dict
         if pname not in project_set:
             # map back using best fuzzy; discard if still not in set
             best = process.extractOne(pname, project_names, scorer=fuzz.token_set_ratio)
-            if not best or best[1] < 86:
+            if not best or best[1] < FUZZY_THRESHOLD_FINAL_GUARD:
                 continue
             pname = best[0]
 
