@@ -304,9 +304,10 @@ export interface ProjectHistoryResponse {
 export async function getProjectHistory(filters?: ProjectHistoryFilters): Promise<ProjectHistoryResponse> {
   const url = new URL(`${BASE_URL.replace(/\/$/, "")}/project-history`);
 
-  // Backend supports cw_label and category; year is optional and may be ignored server-side
+  // Backend now properly supports year filtering
   if (filters?.year) {
     url.searchParams.set("year", String(filters.year));
+    console.log(`Applying year filter: ${filters.year}`);
   }
   if (filters?.cwLabel) {
     url.searchParams.set("cw_label", filters.cwLabel);
@@ -328,7 +329,7 @@ export async function getProjectHistory(filters?: ProjectHistoryFilters): Promis
   }
 
   const data = await res.json();
-  console.log('Project history API response:', data);
+  console.log(`Project history API response: ${data.items?.length || 0} items, total: ${data.total || 0}`);
 
   // Adapt backend pagination shape { items, total, page, page_size } to frontend shape
   if (Array.isArray(data?.items) && typeof data?.total === "number") {
@@ -371,26 +372,41 @@ export async function getCwLabelsForYear(year: number, category?: string): Promi
   let page = 1;
   const pageSize = 100; // backend max
 
-  while (true) {
-    const url = new URL(`${BASE_URL.replace(/\/$/, "")}/project-history`);
-    url.searchParams.set("year", String(year));
-    url.searchParams.set("page", String(page));
-    url.searchParams.set("page_size", String(pageSize));
-    if (category) url.searchParams.set("category", category);
+  try {
+    while (true) {
+      const url = new URL(`${BASE_URL.replace(/\/$/, "")}/project-history`);
+      url.searchParams.set("year", String(year));
+      url.searchParams.set("page", String(page));
+      url.searchParams.set("page_size", String(pageSize));
+      if (category) url.searchParams.set("category", category);
 
-    const res = await fetch(url.toString());
-    if (!res.ok) break;
-    const data = await res.json();
-    if (Array.isArray(data?.items)) {
-      for (const it of data.items) {
-        if (it?.cw_label) labels.add(String(it.cw_label));
+      console.log(`Fetching CW labels for year ${year}, category ${category || 'all'}, page ${page}`);
+      const res = await fetch(url.toString());
+      if (!res.ok) {
+        console.error(`Failed to fetch CW labels: ${res.status}`);
+        break;
       }
+      
+      const data = await res.json();
+      if (Array.isArray(data?.items)) {
+        for (const it of data.items) {
+          if (it?.cw_label && it.cw_label.startsWith('CW')) {
+            labels.add(String(it.cw_label));
+          }
+        }
+      }
+      
+      const total = Number(data?.total ?? 0);
+      const pages = Math.ceil(total / pageSize) || 1;
+      console.log(`Found ${labels.size} unique CW labels for year ${year}, ${total} total records, ${pages} pages`);
+      
+      if (page >= pages) break;
+      page += 1;
     }
-    const total = Number(data?.total ?? 0);
-    const pages = Math.ceil(total / pageSize) || 1;
-    if (page >= pages) break;
-    page += 1;
+  } catch (error) {
+    console.error(`Error fetching CW labels for year ${year}:`, error);
   }
+  
   return labels;
 }
 

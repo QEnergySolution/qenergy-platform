@@ -34,6 +34,7 @@ class ProjectHistoryRepository:
         category: Optional[str] = None,
         cw_label: Optional[str] = None,
         cw_range: Optional[Tuple[str, str]] = None,
+        year: Optional[int] = None,
         page: int = 1,
         page_size: int = 20,
         sort_by: str = "log_date",
@@ -72,6 +73,10 @@ class ProjectHistoryRepository:
                     ProjectHistory.cw_label <= end_cw
                 )
             )
+            
+        # Filter by year using log_date
+        if year is not None:
+            query = query.where(extract('year', ProjectHistory.log_date) == year)
         
         # Count total before pagination
         count_query = select(func.count()).select_from(query.subquery())

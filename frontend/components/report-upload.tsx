@@ -160,12 +160,15 @@ export function ReportUpload() {
     const loadAvailableWeeks = async () => {
       if (!selectedYear) return
       try {
+        console.log(`Loading available weeks for year ${selectedYear} and category ${selectedCategory}`);
         const labels = await getCwLabelsForYear(
           parseInt(selectedYear),
           selectedCategory && selectedCategory !== "all" ? selectedCategory : undefined,
         )
+        console.log(`Found ${labels.size} weeks for year ${selectedYear}:`, Array.from(labels));
         setAvailableWeeks(labels)
-      } catch {
+      } catch (error) {
+        console.error(`Failed to load weeks for year ${selectedYear}:`, error);
         setAvailableWeeks(new Set())
       }
     }
@@ -319,6 +322,8 @@ export function ReportUpload() {
         const currentWeekStr = `CW${getCurrentWeek().toString().padStart(2, "0")}`
         const currentYearStr = currentYear.toString()
         
+        console.log(`Trying to load data for current period: ${currentYearStr} ${currentWeekStr}`);
+        
         const currentResponse = await getProjectHistory({
           year: currentYear,
           cwLabel: currentWeekStr
@@ -326,6 +331,7 @@ export function ReportUpload() {
         
         if (currentResponse.totalRecords > 0) {
           // Use current date if data exists
+          console.log(`Found ${currentResponse.totalRecords} records for current period`);
           setSelectedYear(currentYearStr)
           setSelectedWeek(currentWeekStr)
           setActualLoadedYear(currentYearStr)
@@ -334,7 +340,9 @@ export function ReportUpload() {
         }
         
         // If no data for current period, try to find the most recent data
+        console.log('No data for current period, searching for most recent data');
         const allResponse = await getProjectHistory({})
+        
         if (allResponse.totalRecords > 0 && allResponse.projectHistory.length > 0) {
           // Use the most recent record's date
           const mostRecent = allResponse.projectHistory[0] // API returns sorted by date DESC
@@ -342,16 +350,26 @@ export function ReportUpload() {
           const recentYear = logDate.getFullYear().toString()
           const recentWeek = mostRecent.cwLabel
           
-          console.log(`Setting defaults to most recent data: ${recentYear} ${recentWeek}`)
+          console.log(`Setting defaults to most recent data: ${recentYear} ${recentWeek} (from ${mostRecent.projectCode})`);
           setSelectedYear(recentYear)
           setSelectedWeek(recentWeek)
           setActualLoadedYear(recentYear)
           setActualLoadedWeek(recentWeek)
         } else {
           // Fallback to current date
+          console.log('No data found at all, using current date as fallback');
           setSelectedYear(currentYearStr)
           setSelectedWeek(currentWeekStr)
         }
+        
+        // Load available weeks for the selected year
+        const labels = await getCwLabelsForYear(
+          parseInt(currentYearStr),
+          selectedCategory && selectedCategory !== "all" ? selectedCategory : undefined
+        );
+        setAvailableWeeks(labels);
+        console.log(`Loaded ${labels.size} available weeks for year ${currentYearStr}`);
+        
       } catch (error) {
         console.error("Failed to set intelligent defaults:", error)
         // Fallback to current date
@@ -361,7 +379,7 @@ export function ReportUpload() {
     }
     
     void setIntelligentDefaults()
-  }, [currentYear])
+  }, [currentYear, selectedCategory])
 
   const handleReportContentChange = (reportId: string, content: string) => {
     setReports((prev) =>

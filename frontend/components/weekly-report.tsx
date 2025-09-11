@@ -90,18 +90,74 @@ export function WeeklyReport() {
   }
 
   useEffect(() => {
-    const currentWeek = getCurrentWeek()
-    setLatestYear(currentYear.toString())
-    setLatestWeek(`CW${currentWeek.toString().padStart(2, "0")}`)
-
-    // Set past week to previous week
-    if (currentWeek > 1) {
-      setPastYear(currentYear.toString())
-      setPastWeek(`CW${(currentWeek - 1).toString().padStart(2, "0")}`)
-    } else {
-      setPastYear((currentYear - 1).toString())
-      setPastWeek("CW52")
-    }
+    const initializeWeekSelection = async () => {
+      try {
+        const currentWeek = getCurrentWeek();
+        const currentYearStr = currentYear.toString();
+        const currentWeekStr = `CW${currentWeek.toString().padStart(2, "0")}`;
+        
+        // Set latest week to current week initially
+        setLatestYear(currentYearStr);
+        setLatestWeek(currentWeekStr);
+        
+        // Set past week to previous week initially
+        let pastYearValue = currentYear;
+        let pastWeekValue = currentWeek - 1;
+        
+        if (currentWeek <= 1) {
+          pastYearValue = currentYear - 1;
+          pastWeekValue = 52;
+        }
+        
+        const pastYearStr = pastYearValue.toString();
+        const pastWeekStr = `CW${pastWeekValue.toString().padStart(2, "0")}`;
+        
+        setPastYear(pastYearStr);
+        setPastWeek(pastWeekStr);
+        
+        console.log(`Initial week selection - Latest: ${currentYearStr} ${currentWeekStr}, Past: ${pastYearStr} ${pastWeekStr}`);
+        
+        // Check if data exists for these weeks
+        const latestLabels = await getCwLabelsForYear(currentYear);
+        const pastLabels = await getCwLabelsForYear(pastYearValue);
+        
+        console.log(`Available weeks - Latest year: ${latestLabels.size}, Past year: ${pastLabels.size}`);
+        
+        // If no data for current week, find the most recent week with data
+        if (!latestLabels.has(currentWeekStr)) {
+          console.log(`No data for current week ${currentWeekStr}, searching for most recent week`);
+          
+          // Find the most recent week with data
+          const sortedWeeks = Array.from(latestLabels)
+            .filter(w => w.startsWith('CW'))
+            .sort((a, b) => {
+              const aNum = parseInt(a.substring(2));
+              const bNum = parseInt(b.substring(2));
+              return bNum - aNum; // Sort descending
+            });
+          
+          if (sortedWeeks.length > 0) {
+            const mostRecentWeek = sortedWeeks[0];
+            console.log(`Setting latest week to most recent with data: ${mostRecentWeek}`);
+            setLatestWeek(mostRecentWeek);
+            
+            // Set past week to one week before the most recent
+            const mostRecentWeekNum = parseInt(mostRecentWeek.substring(2));
+            if (mostRecentWeekNum > 1) {
+              const prevWeek = `CW${(mostRecentWeekNum - 1).toString().padStart(2, "0")}`;
+              if (pastLabels.has(prevWeek)) {
+                console.log(`Setting past week to previous week with data: ${prevWeek}`);
+                setPastWeek(prevWeek);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Failed to initialize week selection:', error);
+      }
+    };
+    
+    void initializeWeekSelection();
   }, [currentYear])
 
   // Load available weeks for the chosen years and category (paginate to collect all weeks)
@@ -109,16 +165,23 @@ export function WeeklyReport() {
     const loadAvailableWeeks = async (year: string | null) => {
       if (!year) return
       try {
+        console.log(`Loading available weeks for year ${year} and category ${selectedCategory}`);
         const labels = await getCwLabelsForYear(
           Number.parseInt(year),
           selectedCategory && selectedCategory !== "all" ? selectedCategory : undefined
         )
+        console.log(`Found ${labels.size} weeks for year ${year}:`, Array.from(labels));
         setAvailableWeeksByYear((prev) => ({ ...prev, [year]: labels }))
-      } catch {
+      } catch (error) {
+        console.error(`Failed to load weeks for year ${year}:`, error);
         setAvailableWeeksByYear((prev) => ({ ...prev, [year]: new Set() }))
       }
     }
 
+    // Clear existing data when selection changes
+    setAvailableWeeksByYear({});
+    
+    // Load data for both past and latest years
     void loadAvailableWeeks(pastYear)
     void loadAvailableWeeks(latestYear)
   }, [pastYear, latestYear, selectedCategory])
