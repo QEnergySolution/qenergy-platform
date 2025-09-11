@@ -12,6 +12,26 @@
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+-- Create report_uploads table (stores file uploads metadata)
+CREATE TABLE IF NOT EXISTS report_uploads (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    original_filename VARCHAR(255) NOT NULL,
+    storage_path VARCHAR(1024) NOT NULL,
+    mime_type VARCHAR(255),
+    file_size_bytes BIGINT,
+    sha256 VARCHAR(64) UNIQUE NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    cw_label VARCHAR(8),
+    uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    parsed_at TIMESTAMPTZ NULL,
+    created_by VARCHAR(255) NOT NULL,
+    updated_by VARCHAR(255) NOT NULL
+);
+
+-- Useful indexes
+CREATE INDEX IF NOT EXISTS idx_report_uploads_sha256 ON report_uploads(sha256);
+CREATE INDEX IF NOT EXISTS idx_report_uploads_uploaded_at ON report_uploads(uploaded_at DESC);
+
 -- Create projects table
 CREATE TABLE IF NOT EXISTS projects (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -29,6 +49,7 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE TABLE IF NOT EXISTS project_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_code VARCHAR(32) NOT NULL REFERENCES projects(project_code) ON DELETE CASCADE,
+    project_name VARCHAR(255),
     category VARCHAR(128),
     entry_type VARCHAR(50) NOT NULL CHECK (entry_type IN ('Report', 'Issue', 'Decision', 'Maintenance', 'Meeting minutes', 'Mid-update')),
     log_date DATE NOT NULL,
@@ -37,6 +58,8 @@ CREATE TABLE IF NOT EXISTS project_history (
     summary TEXT NOT NULL,
     next_actions TEXT,
     owner VARCHAR(255),
+    source_text TEXT,
+    source_upload_id UUID,
     attachment_url VARCHAR(1024),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_by VARCHAR(255) NOT NULL,
@@ -44,6 +67,19 @@ CREATE TABLE IF NOT EXISTS project_history (
     updated_by VARCHAR(255) NOT NULL,
     UNIQUE(project_code, log_date, category)
 );
+
+-- Backfill/upgrade columns for existing installations
+ALTER TABLE project_history ADD COLUMN IF NOT EXISTS project_name VARCHAR(255);
+ALTER TABLE project_history ADD COLUMN IF NOT EXISTS source_text TEXT;
+ALTER TABLE project_history ADD COLUMN IF NOT EXISTS source_upload_id UUID;
+DO $$ BEGIN
+    ALTER TABLE project_history
+        ADD CONSTRAINT fk_project_history_source_upload
+        FOREIGN KEY (source_upload_id) REFERENCES report_uploads(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_object THEN
+    -- constraint already exists
+    NULL;
+END $$;
 
 -- Create weekly_report_analysis table
 CREATE TABLE IF NOT EXISTS weekly_report_analysis (
@@ -72,6 +108,7 @@ CREATE INDEX IF NOT EXISTS idx_project_history_project_code ON project_history(p
 CREATE INDEX IF NOT EXISTS idx_project_history_log_date ON project_history(log_date);
 CREATE INDEX IF NOT EXISTS idx_project_history_cw_label ON project_history(cw_label);
 CREATE INDEX IF NOT EXISTS idx_project_history_category ON project_history(category);
+CREATE INDEX IF NOT EXISTS idx_project_history_source_upload ON project_history(source_upload_id);
 
 CREATE INDEX IF NOT EXISTS idx_analysis_project_cw ON weekly_report_analysis(project_code, cw_label);
 CREATE INDEX IF NOT EXISTS idx_analysis_risk_lvl ON weekly_report_analysis(risk_lvl DESC);
