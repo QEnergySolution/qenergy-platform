@@ -118,9 +118,27 @@ start_backend_macos() {
 start_frontend() {
     if ! is_service_running 3000; then
         print_status "Starting frontend..."
+        # Export NEXT_PUBLIC_API_URL from frontend/.env.local if present for visibility
+        if [[ -f "frontend/.env.local" ]]; then
+            API_URL=$(grep -E '^NEXT_PUBLIC_API_URL=' frontend/.env.local | sed 's/NEXT_PUBLIC_API_URL=//')
+            if [[ -n "$API_URL" ]]; then
+                print_status "Frontend will use NEXT_PUBLIC_API_URL=$API_URL"
+            fi
+        fi
         pnpm dev:fe &
         sleep 10
-        print_success "Frontend started on http://localhost:3000"
+        # Try to detect LAN IP to show a clickable URL for others on the network
+        if command -v hostname >/dev/null 2>&1; then
+            LAN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+        fi
+        if [[ -z "$LAN_IP" && "$OSTYPE" == "darwin"* ]]; then
+            LAN_IP=$(ipconfig getifaddr en0 2>/dev/null || true)
+        fi
+        if [[ -n "$LAN_IP" ]]; then
+            print_success "Frontend started on http://$LAN_IP:3000 (and http://localhost:3000)"
+        else
+            print_success "Frontend started on http://localhost:3000"
+        fi
     else
         print_status "Frontend already running on port 3000"
     fi
@@ -228,7 +246,17 @@ main() {
             echo "=========================================="
             echo
             echo "Services:"
-            echo "• Frontend: http://localhost:3000"
+            if command -v hostname >/dev/null 2>&1; then
+                LAN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+            fi
+            if [[ -z "$LAN_IP" && "$OSTYPE" == "darwin"* ]]; then
+                LAN_IP=$(ipconfig getifaddr en0 2>/dev/null || true)
+            fi
+            if [[ -n "$LAN_IP" ]]; then
+                echo "• Frontend: http://$LAN_IP:3000 (and http://localhost:3000)"
+            else
+                echo "• Frontend: http://localhost:3000"
+            fi
             echo "• Backend API: http://localhost:8002/api"
             echo "• API Docs: http://localhost:8002/docs"
             echo "• Health Check: http://localhost:8002/api/health"
