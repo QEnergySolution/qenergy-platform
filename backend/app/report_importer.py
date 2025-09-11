@@ -482,7 +482,8 @@ def import_single_docx_llm_with_metadata(
     
     try:
         # Extract data using LLM
-        raw_category = category.upper() if category != "Unknown" else "DEV"
+        # Ensure category is a valid raw enum for the LLM parser
+        raw_category = "DEV" if (category is None or category == "Unknown") else str(category).upper()
         llm_rows = extract_rows_from_docx(file_path, cw_label or "CW01", raw_category)
         
         if not llm_rows:
