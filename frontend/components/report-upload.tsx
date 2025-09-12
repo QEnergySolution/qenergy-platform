@@ -80,6 +80,9 @@ export function ReportUpload() {
     Finance: null,
     Investment: null,
   })
+  
+  // Track drag state for each category
+  const [dragOverCategory, setDragOverCategory] = useState<string | null>(null)
   const [uploadResults, setUploadResults] = useState<UploadResult[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [bulkFiles, setBulkFiles] = useState<File[]>([])
@@ -955,62 +958,101 @@ export function ReportUpload() {
             <div>
               <h3 className="text-xl font-semibold mb-6">{t("fileSelection")}</h3>
               <div className="grid grid-cols-4 gap-4">
-                {["DEV", "EPC", "Finance", "Investment"].map((category) => (
-                  <div
-                    key={category}
-                    className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-6 text-center space-y-4 min-h-[180px] hover:border-primary/50 transition-colors"
-                  >
-                    <h4 className="font-semibold text-lg">{category}</h4>
-                    <div className="space-y-3">
-                      <p className="text-muted-foreground text-sm">{t("dragOrClickToUpload")}</p>
-                      <div className="relative">
-                        <input
-                          type="file"
-                          accept=".docx"
-                          onChange={(e) => handleFileSelect(category, e.target.files?.[0] || null)}
-                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                        />
-                        <Button variant="outline" className="w-full bg-transparent py-2 text-sm">
-                          {uploadFiles[category] ? uploadFiles[category]?.name : t("chooseFile")}
-                        </Button>
-                      </div>
-                      {uploadFiles[category] && uploadFiles[category]?.name && processingStatus[uploadFiles[category]?.name || ""] && (
-                        <div className="mt-2">
-                          {processingStatus[uploadFiles[category]?.name || ""] === "processing" && (
-                            <div className="flex items-center gap-2 text-blue-600 text-sm">
-                              <div className="animate-spin rounded-full h-3 w-3 border-2 border-blue-600 border-t-transparent"></div>
-                              {useLlmParser ? "AI Processing..." : "Processing..."}
-                            </div>
-                          )}
-                          {processingStatus[uploadFiles[category]?.name || ""] === "complete" && (
-                            <div className="flex items-center gap-2 text-green-600 text-sm">
-                              <CheckCircle className="w-3 h-3" />
-                              Complete
-                            </div>
-                          )}
-                          {processingStatus[uploadFiles[category]?.name || ""] === "error" && (
-                            <div className="flex items-center gap-2 text-red-600 text-sm">
-                              <X className="w-3 h-3" />
-                              Error
-                            </div>
-                          )}
-                          {processingStatus[uploadFiles[category]?.name || ""] === "pending" && (
-                            <div className="flex items-center gap-2 text-yellow-600 text-sm">
-                              <AlertCircle className="w-3 h-3" />
-                              Awaiting User Confirmation
-                            </div>
-                          )}
-                          {processingStatus[uploadFiles[category]?.name || ""] === "cancelled" && (
-                            <div className="flex items-center gap-2 text-gray-600 text-sm">
-                              <X className="w-3 h-3" />
-                              Cancelled
-                            </div>
-                          )}
+                {["DEV", "EPC", "Finance", "Investment"].map((category) => {
+                  return (
+                    <div
+                      key={category}
+                      className={`border-2 border-dashed rounded-lg p-6 text-center space-y-4 min-h-[180px] transition-colors cursor-pointer ${
+                        dragOverCategory === category 
+                          ? "border-primary bg-primary/5" 
+                          : "border-muted-foreground/25 hover:border-primary/50"
+                      }`}
+                      onDragEnter={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDragOverCategory(category);
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      onDragLeave={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        // Only clear if we're leaving this specific category
+                        if (e.currentTarget.contains(e.relatedTarget as Node)) {
+                          return;
+                        }
+                        setDragOverCategory(null);
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDragOverCategory(null);
+                        
+                        // Process dropped files
+                        const files = Array.from(e.dataTransfer.files);
+                        if (files.length > 0) {
+                          // Filter for .docx files
+                          const docxFiles = files.filter(file => file.name.toLowerCase().endsWith('.docx'));
+                          if (docxFiles.length > 0) {
+                            handleFileSelect(category, docxFiles[0]);
+                          }
+                        }
+                      }}
+                    >
+                      <h4 className="font-semibold text-lg">{category}</h4>
+                      <div className="space-y-3">
+                        <p className="text-muted-foreground text-sm">{t("dragOrClickToUpload")}</p>
+                        <div className="relative">
+                          <input
+                            type="file"
+                            accept=".docx"
+                            onChange={(e) => handleFileSelect(category, e.target.files?.[0] || null)}
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                          />
+                          <Button variant="outline" className="w-full bg-transparent py-2 text-sm">
+                            {uploadFiles[category] ? uploadFiles[category]?.name : t("chooseFile")}
+                          </Button>
                         </div>
-                      )}
+                        {uploadFiles[category] && uploadFiles[category]?.name && processingStatus[uploadFiles[category]?.name || ""] && (
+                          <div className="mt-2">
+                            {processingStatus[uploadFiles[category]?.name || ""] === "processing" && (
+                              <div className="flex items-center gap-2 text-blue-600 text-sm">
+                                <div className="animate-spin rounded-full h-3 w-3 border-2 border-blue-600 border-t-transparent"></div>
+                                {useLlmParser ? "AI Processing..." : "Processing..."}
+                              </div>
+                            )}
+                            {processingStatus[uploadFiles[category]?.name || ""] === "complete" && (
+                              <div className="flex items-center gap-2 text-green-600 text-sm">
+                                <CheckCircle className="w-3 h-3" />
+                                Complete
+                              </div>
+                            )}
+                            {processingStatus[uploadFiles[category]?.name || ""] === "error" && (
+                              <div className="flex items-center gap-2 text-red-600 text-sm">
+                                <X className="w-3 h-3" />
+                                Error
+                              </div>
+                            )}
+                            {processingStatus[uploadFiles[category]?.name || ""] === "pending" && (
+                              <div className="flex items-center gap-2 text-yellow-600 text-sm">
+                                <AlertCircle className="w-3 h-3" />
+                                Awaiting User Confirmation
+                              </div>
+                            )}
+                            {processingStatus[uploadFiles[category]?.name || ""] === "cancelled" && (
+                              <div className="flex items-center gap-2 text-gray-600 text-sm">
+                                <X className="w-3 h-3" />
+                                Cancelled
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -1149,27 +1191,73 @@ export function ReportUpload() {
           <div className="border-t pt-6">
             <h3 className="text-xl font-semibold mb-1">Import from Folder</h3>
             <p className="text-sm text-muted-foreground mb-3">Only .docx files will be processed.</p>
-            <div className="flex items-center gap-4">
-              <div className="relative">
-                <input
-                  type="file"
-                  accept=".docx"
-                  // @ts-expect-error - webkitdirectory is not in the standard HTML input attributes
-                  webkitdirectory="true"
-                  multiple
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                  onChange={(e) => {
-                    const files = Array.from(e.target.files || []).filter((f) => f.name.toLowerCase().endsWith('.docx'))
-                    setBulkFiles(files)
-                  }}
-                />
-                <Button variant="outline" className="bg-transparent py-2 text-sm">
-                  {t("chooseFolder")}
-                </Button>
+            <div 
+              className={`border-2 border-dashed rounded-lg p-6 mb-4 transition-colors ${
+                dragOverCategory === 'bulk' 
+                  ? "border-primary bg-primary/5" 
+                  : "border-muted-foreground/25 hover:border-primary/50"
+              }`}
+              onDragEnter={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setDragOverCategory('bulk');
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.currentTarget.contains(e.relatedTarget as Node)) {
+                  return;
+                }
+                setDragOverCategory(null);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setDragOverCategory(null);
+                
+                // Process dropped files
+                const files = Array.from(e.dataTransfer.files);
+                const docxFiles = files.filter(file => file.name.toLowerCase().endsWith('.docx'));
+                if (docxFiles.length > 0) {
+                  setBulkFiles(docxFiles);
+                }
+              }}
+            >
+              <div className="flex flex-col items-center gap-4">
+                <FolderOpen className="w-12 h-12 text-muted-foreground" />
+                <div className="text-center">
+                  <p className="text-muted-foreground">{t("dragOrClickToUpload")}</p>
+                  <p className="text-sm text-muted-foreground mt-1">Drop multiple .docx files or a folder here</p>
+                </div>
+                <div className="relative">
+                  <input
+                    type="file"
+                    accept=".docx"
+                    // @ts-expect-error - webkitdirectory is not in the standard HTML input attributes
+                    webkitdirectory="true"
+                    multiple
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || []).filter((f) => f.name.toLowerCase().endsWith('.docx'))
+                      setBulkFiles(files)
+                    }}
+                  />
+                  <Button variant="outline" className="bg-transparent py-2 text-sm">
+                    {t("chooseFolder")}
+                  </Button>
+                </div>
+                {bulkFiles.length > 0 && (
+                  <div className="text-sm font-medium text-primary">
+                    {bulkFiles.length} files selected
+                  </div>
+                )}
               </div>
-              <div className="text-sm text-muted-foreground">
-                {bulkFiles.length > 0 ? `${bulkFiles.length} files selected` : t("noFilesSelected")}
-              </div>
+            </div>
+            <div className="flex justify-end">
               <Button
                 variant="default"
                 disabled={isUploading || bulkFiles.length === 0}
