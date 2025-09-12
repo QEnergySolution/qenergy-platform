@@ -15,6 +15,7 @@ import hashlib
 
 from .database import get_db
 from .task_queue import task_queue, TaskStatus, TaskStep
+from .uploads import save_bytes_to_storage
 from .utils import (
     parse_filename,
     parse_docx_rows,
@@ -598,74 +599,85 @@ async def persist_upload_to_database(
             message=f"Saving file: {filename}"
         )
         
-        # Save uploaded file temporarily
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_file:
-            content = await file.read()
-            tmp_file.write(content)
-            tmp_file.flush()
-            
-            try:
-                # Update progress: processing
-                await task_queue.update_task(
-                    task_id,
-                    current_step=TaskStep.LLM_PROCESSING if use_llm else TaskStep.TEXT_EXTRACTION,
-                    progress=30,
-                    message="Processing and saving to database..."
-                )
-                
-                # Use report importer to save to database
-                if use_llm:
-                    # Import here to avoid circular import
-                    from .report_importer import import_single_docx_llm_with_metadata
+        # Save a persistent on-disk copy first
+        content = await file.read()
+        try:
+            stored_path = save_bytes_to_storage(content, filename)
+            logger.info(f"Stored uploaded file copy at {stored_path}")
+        except Exception as e:
+            logger.error(f"Failed to store upload copy: {e}")
+            # Fallback to temp file if storage fails
+            stored_path = None
+        
+        # Use the persistent copy if available; fallback to temp file
+        if stored_path is None:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_file:
+                tmp_file.write(content)
+                tmp_file.flush()
+                stored_path = tmp_file.name
 
-                    # DB-backed project code mapper (using seeded projects)
-                    def db_mapper(project_name: str) -> str | None:
-                        return get_project_code_by_name_db(db, project_name)
-                    
-                    result = import_single_docx_llm_with_metadata(
-                        db=db,
-                        file_path=tmp_file.name,
-                        original_filename=filename,
-                        project_code_mapper=db_mapper,
-                        created_by="web_user",
-                        force_import=force_import
-                    )
-                else:
-                    # Simple parsing path delegated to importer
-                    from .report_importer import import_single_docx_simple_with_metadata
-                    result = import_single_docx_simple_with_metadata(
-                        db=db,
-                        file_path=tmp_file.name,
-                        original_filename=filename,
-                        created_by="web_user",
-                        force_import=force_import
-                    )
-                
-                # Update progress: completion
-                await task_queue.update_task(
-                    task_id,
-                    status=TaskStatus.COMPLETED,
-                    current_step=TaskStep.COMPLETED,
-                    progress=100,
-                    message=f"Successfully saved {result.get('rows_created', 0)} entries to database",
-                    result_count=result.get('rows_created', 0)
+        try:
+            # Update progress: processing
+            await task_queue.update_task(
+                task_id,
+                current_step=TaskStep.LLM_PROCESSING if use_llm else TaskStep.TEXT_EXTRACTION,
+                progress=30,
+                message="Processing and saving to database..."
+            )
+
+            # Use report importer to save to database
+            if use_llm:
+                # Import here to avoid circular import
+                from .report_importer import import_single_docx_llm_with_metadata
+
+                # DB-backed project code mapper (using seeded projects)
+                def db_mapper(project_name: str) -> str | None:
+                    return get_project_code_by_name_db(db, project_name)
+
+                result = import_single_docx_llm_with_metadata(
+                    db=db,
+                    file_path=str(stored_path),
+                    original_filename=filename,
+                    project_code_mapper=db_mapper,
+                    created_by="web_user",
+                    force_import=force_import
                 )
-                
-                return {
-                    "taskId": task_id,
-                    "uploadId": result.get("upload_id"),
-                    "fileName": filename,
-                    "year": year,
-                    "cw_label": cw_label,
-                    "category": category,
-                    "rowsCreated": result.get("rows_created", 0),
-                    "parsedWith": "llm" if use_llm else "simple",
-                    "status": "persisted"
-                }
-                
-            finally:
-                # Clean up temp file
-                os.unlink(tmp_file.name)
+            else:
+                # Simple parsing path delegated to importer
+                from .report_importer import import_single_docx_simple_with_metadata
+                result = import_single_docx_simple_with_metadata(
+                    db=db,
+                    file_path=str(stored_path),
+                    original_filename=filename,
+                    created_by="web_user",
+                    force_import=force_import
+                )
+
+            # Update progress: completion
+            await task_queue.update_task(
+                task_id,
+                status=TaskStatus.COMPLETED,
+                current_step=TaskStep.COMPLETED,
+                progress=100,
+                message=f"Successfully saved {result.get('rows_created', 0)} entries to database",
+                result_count=result.get('rows_created', 0)
+            )
+
+            return {
+                "taskId": task_id,
+                "uploadId": result.get("upload_id"),
+                "fileName": filename,
+                "year": year,
+                "cw_label": cw_label,
+                "category": category,
+                "rowsCreated": result.get("rows_created", 0),
+                "parsedWith": "llm" if use_llm else "simple",
+                "status": "persisted"
+            }
+
+        finally:
+            # Do not delete stored_path; it's the on-disk copy for auditing
+            pass
                 
     except Exception as e:
         logger.error(f"Database persistence failed for {filename}: {e}")

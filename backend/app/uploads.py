@@ -2,6 +2,7 @@ import os
 import time
 from pathlib import Path
 from typing import Optional
+import datetime
 
 from fastapi import UploadFile
 
@@ -51,4 +52,39 @@ def cleanup_tmp(older_than_seconds: int) -> int:
             continue
     return removed
 
+
+# Persistent storage helpers
+
+def _sanitize_filename(name: str) -> str:
+    # Basic sanitization to avoid path traversal and unsafe chars
+    name = name or "upload.bin"
+    name = os.path.basename(name)
+    name = name.replace("..", "_")
+    # Replace spaces with underscores for readability
+    return name.replace(" ", "_")
+
+
+def get_storage_dir() -> Path:
+    base = os.getenv("REPORT_UPLOAD_STORAGE_DIR")
+    if not base:
+        # Default to repo-level uploads/inbox (relative to CWD of the server process)
+        base = os.path.join(os.getcwd(), "uploads", "inbox")
+    d = Path(base)
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def save_bytes_to_storage(content: bytes, filename: str) -> Path:
+    storage_dir = get_storage_dir()
+    ts = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    safe_name = _sanitize_filename(filename)
+    target = storage_dir / f"{ts}_{safe_name}"
+    # Ensure uniqueness if called multiple times in the same second
+    i = 1
+    while target.exists():
+        target = storage_dir / f"{ts}_{i}_{safe_name}"
+        i += 1
+    with target.open("wb") as f:
+        f.write(content)
+    return target
 

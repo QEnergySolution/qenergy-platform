@@ -198,7 +198,10 @@ def import_single_docx_simple_with_metadata(
             project_sections = []
             for row in parsed_rows:
                 project_name = row.get("title", "Unknown Project")
-                if project_name and " - " in project_name:
+                # Normalize project_name to a safe non-empty string
+                if not project_name or not isinstance(project_name, str):
+                    project_name = "Unknown Project"
+                if " - " in project_name:
                     project_name = project_name.split(" - ")[0]  # Remove " - CW01" suffix
                 source_text = row.get("summary", "")
                 if source_text.strip():
@@ -245,7 +248,10 @@ def import_single_docx_simple_with_metadata(
             
             if not project_code:
                 # Create virtual project code
-                project_code = f"VIRT_{project_name.upper().replace(' ', '_')[:20]}"
+                safe_name = project_name or "UNKNOWN"
+                if not isinstance(safe_name, str):
+                    safe_name = str(safe_name)
+                project_code = f"VIRT_{safe_name.upper().replace(' ', '_')[:20]}"
                 # Ensure it's unique in projects table
                 counter = 1
                 base_code = project_code
@@ -493,6 +499,8 @@ def import_single_docx_llm_with_metadata(
         # Process extracted rows
         for row_data in llm_rows:
             project_name = row_data.get("project_name", "Unknown Project")
+            if not project_name or not isinstance(project_name, str):
+                project_name = "Unknown Project"
             
             # Map project name to code
             if project_code_mapper:
@@ -502,7 +510,10 @@ def import_single_docx_llm_with_metadata(
             
             if not project_code:
                 # Create auto-generated project code
-                project_code = f"AUTO_{project_name.upper().replace(' ', '_')[:20]}"
+                safe_name = project_name or "UNKNOWN"
+                if not isinstance(safe_name, str):
+                    safe_name = str(safe_name)
+                project_code = f"AUTO_{safe_name.upper().replace(' ', '_')[:20]}"
                 counter = 1
                 base_code = project_code
                 while True:
