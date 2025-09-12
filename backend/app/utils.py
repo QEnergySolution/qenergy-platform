@@ -51,11 +51,15 @@ _CAT_MAP = {
 
 def parse_filename(filename: str):
     """Parse filename to extract year, cw_label and category (signature & output unchanged)."""
-    name_without_ext = filename.lower()
+    # Extract just the base filename from any path (handles webkitdirectory paths)
+    import os
+    base_filename = os.path.basename(filename)
+    
+    name_without_ext = base_filename.lower()
     if name_without_ext.endswith('.docx'):
         name_without_ext = name_without_ext[:-5]
 
-    strict_match = _FILENAME_RE_STRICT.match(filename)
+    strict_match = _FILENAME_RE_STRICT.match(base_filename)
     if strict_match:
         year = int(strict_match.group("year"))
         cw_label = f"CW{strict_match.group('cw').upper()}"
@@ -63,7 +67,7 @@ def parse_filename(filename: str):
         category = _CAT_MAP.get(raw, raw)
         return year, cw_label, raw, category
 
-    cw_match = _CW_PATTERN.search(filename)
+    cw_match = _CW_PATTERN.search(base_filename)
     if not cw_match:
         raise ValueError("INVALID_NAME: No calendar week (CW##) found in filename")
     cw_num = int(cw_match.group(1))
@@ -72,14 +76,14 @@ def parse_filename(filename: str):
     category_raw = None
     category = None
     for pattern, cat_raw in _CATEGORY_PATTERNS:
-        if pattern.search(filename):
+        if pattern.search(base_filename):
             category_raw = cat_raw
             category = _CAT_MAP.get(cat_raw, cat_raw)
             break
     if not category_raw:
         raise ValueError("INVALID_NAME: No valid category (DEV, EPC, FINANCE, INVESTMENT) found in filename")
 
-    year_match = re.search(r"\b(20\d{2})\b", filename)
+    year_match = re.search(r"\b(20\d{2})\b", base_filename)
     if year_match:
         year = int(year_match.group(1))
     else:

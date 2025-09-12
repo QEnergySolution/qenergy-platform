@@ -346,11 +346,28 @@ Goal: Add advanced features and improve user experience.
   - Analysis result caching
   - Database query optimization
   - Rate limiting
+- [x] improve bulk folder import (2025-09-12)
 
 Acceptance for Phase 4:
 - Bulk operations work efficiently
 - UI is responsive and user-friendly
 - Performance is acceptable for production use
+
+---
+
+### P0 — Minimal-Change Folder Upload (TDD plan) — ✅ COMPLETED 2025-09-12
+Goal: Enable uploading an entire folder (webkitdirectory) with minimal backend change, validated by posting all `.docx` files from `tests-uploads` as success criteria.
+
+Implemented:
+- [x] Tests-first: added server test to read all `.docx` in `/Users/yuxin.xue/Projects/qenergy-platform/tests-uploads` and POST them as multipart `files` to `POST /api/reports/upload/bulk`; passes with 200 and `summary.filesAccepted >= 1`.
+- [x] Backend: kept existing `POST /api/reports/upload/bulk` unchanged in interface. Updated `parse_filename` to handle paths in filenames by extracting basename first.
+- [x] Frontend: kept UI unchanged; `input[type="file"][multiple][webkitdirectory]` already present. No schema changes needed.
+- [x] Success marker: ability to pipe a real local folder selection end-to-end validated by the server test using the repository `tests-uploads` sample files.
+- [x] Constraints: strictly minimal delta achieved; no DB schema changes needed.
+
+Acceptance:
+- ✅ Server test for folder upload passes.
+- ✅ Manual selection in UI can pick a directory and preview shows entries (ensured by existing component).
 
 ---
 
