@@ -53,7 +53,7 @@ def seed_projects():
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000","*"],
+    allow_origins=["http://localhost:3000","http://10.150.190.63:3000","*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
