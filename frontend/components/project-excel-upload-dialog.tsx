@@ -162,6 +162,16 @@ export function ProjectExcelUploadDialog({ open, onOpenChange, onUpload }: Proje
     link.click()
     document.body.removeChild(link)
   }
+  
+  const downloadSampleExcel = () => {
+    const sampleFilePath = "/samples/sample-projects.xlsx"
+    const link = document.createElement("a")
+    link.setAttribute("href", sampleFilePath)
+    link.setAttribute("download", "sample-projects.xlsx")
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -322,25 +332,40 @@ export function ProjectExcelUploadDialog({ open, onOpenChange, onUpload }: Proje
           )}
         </div>
         
-        <DialogFooter>
-          {!uploadResult ? (
-            <>
-              <Button type="button" variant="outline" onClick={handleClose}>
-                {t("cancel")}
-              </Button>
-              <Button
-                type="button"
-                disabled={!file || parsedProjects.length === 0 || !!parseError || isUploading}
-                onClick={handleUpload}
-              >
-                {isUploading ? t("uploading") : t("upload")}
-              </Button>
-            </>
-          ) : (
-            <Button type="button" onClick={handleClose}>
-              {t("close")}
+        <DialogFooter className="flex flex-col sm:flex-row sm:justify-between">
+          <div className="mb-3 sm:mb-0">
+            <Button 
+              type="button" 
+              variant="outline" 
+              size="sm" 
+              onClick={downloadSampleExcel}
+              className="flex items-center"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              {t("downloadSampleExcel")}
             </Button>
-          )}
+          </div>
+          
+          <div className="flex gap-2">
+            {!uploadResult ? (
+              <>
+                <Button type="button" variant="outline" onClick={handleClose}>
+                  {t("cancel")}
+                </Button>
+                <Button
+                  type="button"
+                  disabled={!file || parsedProjects.length === 0 || !!parseError || isUploading}
+                  onClick={handleUpload}
+                >
+                  {isUploading ? t("uploading") : t("upload")}
+                </Button>
+              </>
+            ) : (
+              <Button type="button" onClick={handleClose}>
+                {t("close")}
+              </Button>
+            )}
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -23,6 +23,7 @@ export const translations = {
     row: "Row",
     andMoreErrors: "And {count} more errors",
     downloadErrors: "Download Errors",
+    downloadSampleExcel: "Sample Excel File",
     unknownError: "An unknown error occurred",
     noDataInFile: "No data found in file",
     missingColumns: "Missing required columns",
@@ -193,6 +194,9 @@ export const translations = {
     project: "Project",
   },
   fr: {
+    // Common
+    downloadSampleExcel: "Fichier Excel Exemple",
+    
     // Sidebar
     admin: "Admin",
     projectManagement: "Gestion de Projet",
@@ -346,6 +350,9 @@ export const translations = {
     project: "Projet",
   },
   de: {
+    // Common
+    downloadSampleExcel: "Excel-Beispieldatei",
+    
     // Sidebar
     admin: "Admin",
     projectManagement: "Projektmanagement",
@@ -499,6 +506,9 @@ export const translations = {
     project: "Projekt",
   },
   es: {
+    // Common
+    downloadSampleExcel: "Archivo Excel de Ejemplo",
+    
     // Sidebar
     admin: "Admin",
     projectManagement: "Gestión de Proyectos",
@@ -653,6 +663,9 @@ export const translations = {
     project: "Proyecto",
   },
   pt: {
+    // Common
+    downloadSampleExcel: "Arquivo Excel de Exemplo",
+    
     // Sidebar
     admin: "Admin",
     projectManagement: "Gestão de Projetos",
@@ -806,6 +819,9 @@ export const translations = {
     project: "Projeto",
   },
   ko: {
+    // Common
+    downloadSampleExcel: "샘플 Excel 파일",
+    
     // Sidebar
     admin: "관리자",
     projectManagement: "프로젝트 관리",
