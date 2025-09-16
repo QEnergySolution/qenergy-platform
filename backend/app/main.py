@@ -21,6 +21,7 @@ from .utils import (
     parse_docx_rows,
     seed_projects_from_csv,
     get_project_code_by_name_db,
+    _CAT_MAP,
 )
 from .routes import project, project_history, analysis, project_candidates
 
@@ -344,16 +345,40 @@ def _error(code: str, message: str):
 @app.post("/api/reports/upload")
 async def upload_single(
     file: UploadFile = File(...),
-    use_llm: bool = Query(False, description="Use LLM parser for advanced extraction")
+    use_llm: bool = Query(False, description="Use LLM parser for advanced extraction"),
+    override_year: str = Query(None, description="Override the year extracted from filename"),
+    override_week: str = Query(None, description="Override the calendar week extracted from filename"),
+    override_category: str = Query(None, description="Override the category extracted from filename")
 ):
     filename = file.filename or ""
     if not filename.lower().endswith(".docx"):
         return _error("UNSUPPORTED_TYPE", "Only .docx is supported")
     
     try:
-        year, cw_label, category_raw, category = parse_filename(filename)
+        # Try to parse filename first
+        try:
+            year, cw_label, category_raw, category = parse_filename(filename)
+        except ValueError as e:
+            # If filename parsing fails but we have override parameters, use those
+            if override_year and override_week and override_category:
+                year = int(override_year)
+                cw_label = override_week if override_week.upper().startswith("CW") else f"CW{override_week.zfill(2)}"
+                category_raw = override_category.upper()
+                category = _CAT_MAP.get(category_raw, category_raw)
+            else:
+                # If no overrides provided, return the original error
+                return _error("INVALID_NAME", f"Filename '{filename}' must contain a calendar week (e.g., CW01) and category (DEV, EPC, FINANCE, or INVESTMENT). Details: {str(e)}")
+        
+        # Apply overrides if provided
+        if override_year:
+            year = int(override_year)
+        if override_week:
+            cw_label = override_week if override_week.upper().startswith("CW") else f"CW{override_week.zfill(2)}"
+        if override_category:
+            category_raw = override_category.upper()
+            category = _CAT_MAP.get(category_raw, category_raw)
     except ValueError as e:
-        return _error("INVALID_NAME", f"Filename '{filename}' must contain a calendar week (e.g., CW01) and category (DEV, EPC, FINANCE, or INVESTMENT). Details: {str(e)}")
+        return _error("INVALID_PARAMETER", f"Invalid parameter values: {str(e)}")
     
     # Create task for tracking
     task_id = task_queue.create_task(filename, use_llm)
@@ -568,6 +593,9 @@ async def persist_upload_to_database(
     file: UploadFile = File(...),
     use_llm: bool = Query(False, description="Use LLM parser for advanced extraction"),
     force_import: bool = Query(False, description="Force import even if file already exists"),
+    override_year: str = Query(None, description="Override the year extracted from filename"),
+    override_week: str = Query(None, description="Override the calendar week extracted from filename"),
+    override_category: str = Query(None, description="Override the category extracted from filename"),
     db: Session = Depends(get_db)
 ):
     """
@@ -578,10 +606,32 @@ async def persist_upload_to_database(
         return _error("UNSUPPORTED_TYPE", "Only .docx is supported")
     
     try:
-        year, cw_label, category_raw, category = parse_filename(filename)
+        # Try to parse filename first
+        try:
+            year, cw_label, category_raw, category = parse_filename(filename)
+        except ValueError as e:
+            # If filename parsing fails but we have override parameters, use those
+            if override_year and override_week and override_category:
+                year = int(override_year)
+                cw_label = override_week if override_week.upper().startswith("CW") else f"CW{override_week.zfill(2)}"
+                category_raw = override_category.upper()
+                category = _CAT_MAP.get(category_raw, category_raw)
+            else:
+                # If no overrides provided, return the original error
+                logger.error(f"Failed to parse filename '{filename}': {e}")
+                return _error("INVALID_NAME", f"Filename '{filename}' must contain a calendar week (e.g., CW01) and category (DEV, EPC, FINANCE, or INVESTMENT). Details: {str(e)}")
+        
+        # Apply overrides if provided
+        if override_year:
+            year = int(override_year)
+        if override_week:
+            cw_label = override_week if override_week.upper().startswith("CW") else f"CW{override_week.zfill(2)}"
+        if override_category:
+            category_raw = override_category.upper()
+            category = _CAT_MAP.get(category_raw, category_raw)
     except ValueError as e:
-        logger.error(f"Failed to parse filename '{filename}': {e}")
-        return _error("INVALID_NAME", f"Filename '{filename}' must contain a calendar week (e.g., CW01) and category (DEV, EPC, FINANCE, or INVESTMENT). Details: {str(e)}")
+        logger.error(f"Invalid parameter values: {e}")
+        return _error("INVALID_PARAMETER", f"Invalid parameter values: {str(e)}")
     
     # If not forcing import, we still allow reuse of existing upload via importer logic.
     # So we don't block here; we only compute sha for logging/debug if needed.
@@ -629,18 +679,21 @@ async def persist_upload_to_database(
             if use_llm:
                 # Import here to avoid circular import
                 from .report_importer import import_single_docx_llm_with_metadata
-
+                
                 # DB-backed project code mapper (using seeded projects)
                 def db_mapper(project_name: str) -> str | None:
                     return get_project_code_by_name_db(db, project_name)
-
+                
                 result = import_single_docx_llm_with_metadata(
                     db=db,
                     file_path=str(stored_path),
                     original_filename=filename,
                     project_code_mapper=db_mapper,
                     created_by="web_user",
-                    force_import=force_import
+                    force_import=force_import,
+                    override_cw_label=cw_label,
+                    override_category=category,
+                    override_log_year=year,
                 )
             else:
                 # Simple parsing path delegated to importer
@@ -650,7 +703,10 @@ async def persist_upload_to_database(
                     file_path=str(stored_path),
                     original_filename=filename,
                     created_by="web_user",
-                    force_import=force_import
+                    force_import=force_import,
+                    override_cw_label=cw_label,
+                    override_category=category,
+                    override_log_year=year,
                 )
 
             # Update progress: completion

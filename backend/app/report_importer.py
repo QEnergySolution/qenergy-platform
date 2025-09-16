@@ -56,25 +56,40 @@ def _create_or_get_upload_record(
     file_path: str,
     original_filename: str,
     created_by: str,
-    force_import: bool = False
+    force_import: bool = False,
+    override_cw_label: Optional[str] = None,
+    override_category: Optional[str] = None,
+    override_log_year: Optional[int] = None,
 ) -> Dict:
     """Create or get existing upload record based on SHA256 hash."""
     # Calculate file hash
     file_hash = _calculate_file_sha256(file_path)
     file_size = os.path.getsize(file_path)
     
-    # Parse filename to extract metadata
+    # Parse filename to extract metadata, then apply overrides if provided
     try:
         year, cw_label, raw_category, category = parse_filename(original_filename)
-        cw_num = int(cw_label[2:])  # Extract number from "CW01" -> 1
-        log_date = _get_cw_wednesday_date(year, cw_num)
     except ValueError:
-        # Fallback for files that don't match expected pattern
-        cw_label = None
-        category = "Unknown"
+        # Fallback defaults
+        year, cw_label, category = None, None, "Unknown"
+
+    # Apply overrides when available
+    if override_cw_label:
+        cw_label = override_cw_label
+    if override_category:
+        category = override_category
+    # Determine log_date using cw/year information, prefer override year
+    if cw_label and (override_log_year or year):
+        try:
+            cw_num = int(str(cw_label).upper().replace("CW", ""))
+            log_year = override_log_year if override_log_year is not None else int(year)  # type: ignore[arg-type]
+            log_date = _get_cw_wednesday_date(log_year, cw_num)
+        except Exception:
+            log_date = date.today()
+    else:
         log_date = date.today()
     
-    # Check if upload already exists by SHA256 (always check to avoid unique errors)
+    # Check if upload already exists by SHA256
     existing = db.execute(
         text("SELECT id, status FROM report_uploads WHERE sha256 = :sha256"),
         {"sha256": file_hash}
@@ -89,7 +104,7 @@ def _create_or_get_upload_record(
             "is_new": False,
             "cw_label": cw_label,
             "category": category,
-            "log_date": log_date
+            "log_date": log_date,
         }
     
     # Create new upload record
@@ -125,7 +140,7 @@ def _create_or_get_upload_record(
         "is_new": True,
         "cw_label": cw_label,
         "category": category,
-        "log_date": log_date
+        "log_date": log_date,
     }
 
 
@@ -134,7 +149,11 @@ def import_single_docx_simple_with_metadata(
     file_path: str,
     original_filename: str,
     created_by: str,
-    force_import: bool = False
+    force_import: bool = False,
+    *,
+    override_cw_label: Optional[str] = None,
+    override_category: Optional[str] = None,
+    override_log_year: Optional[int] = None,
 ) -> Dict:
     """
     Import a single DOCX file using simple parsing (no LLM) and save to database.
@@ -157,7 +176,16 @@ def import_single_docx_simple_with_metadata(
         logger.warning(f"Could not seed projects: {e}")
     
     # Create or get upload record
-    upload_info = _create_or_get_upload_record(db, file_path, original_filename, created_by, force_import)
+    upload_info = _create_or_get_upload_record(
+        db,
+        file_path,
+        original_filename,
+        created_by,
+        force_import,
+        override_cw_label=override_cw_label,
+        override_category=override_category,
+        override_log_year=override_log_year,
+    )
     upload_id = upload_info["upload_id"]
     cw_label = upload_info["cw_label"]
     category = upload_info["category"]
@@ -440,7 +468,11 @@ def import_single_docx_llm_with_metadata(
     original_filename: str,
     created_by: str,
     project_code_mapper: Optional[Callable[[str], Optional[str]]] = None,
-    force_import: bool = False
+    force_import: bool = False,
+    *,
+    override_cw_label: Optional[str] = None,
+    override_category: Optional[str] = None,
+    override_log_year: Optional[int] = None,
 ) -> Dict:
     """
     Import a single DOCX file using LLM parsing and save to database.
@@ -464,7 +496,16 @@ def import_single_docx_llm_with_metadata(
         logger.warning(f"Could not seed projects: {e}")
     
     # Create or get upload record
-    upload_info = _create_or_get_upload_record(db, file_path, original_filename, created_by, force_import)
+    upload_info = _create_or_get_upload_record(
+        db,
+        file_path,
+        original_filename,
+        created_by,
+        force_import,
+        override_cw_label=override_cw_label,
+        override_category=override_category,
+        override_log_year=override_log_year,
+    )
     upload_id = upload_info["upload_id"]
     cw_label = upload_info["cw_label"]
     category = upload_info["category"]

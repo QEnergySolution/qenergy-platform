@@ -321,14 +321,17 @@ export function ReportUpload() {
   useEffect(() => {
     const setIntelligentDefaults = async () => {
       try {
+        // Compute current year locally to avoid hook dependency warnings
+        const currentYearLocal = new Date().getFullYear()
+        
         // First try current year and current week
         const currentWeekStr = `CW${getCurrentWeek().toString().padStart(2, "0")}`
-        const currentYearStr = currentYear.toString()
+        const currentYearStr = currentYearLocal.toString()
         
         console.log(`Trying to load data for current period: ${currentYearStr} ${currentWeekStr}`);
         
         const currentResponse = await getProjectHistory({
-          year: currentYear,
+          year: currentYearLocal,
           cwLabel: currentWeekStr
         })
         
@@ -339,6 +342,9 @@ export function ReportUpload() {
           setSelectedWeek(currentWeekStr)
           setActualLoadedYear(currentYearStr)
           setActualLoadedWeek(currentWeekStr)
+          // Load available weeks for initial year (no category filter on first load)
+          const labels = await getCwLabelsForYear(currentYearLocal)
+          setAvailableWeeks(labels)
           return
         }
         
@@ -358,31 +364,33 @@ export function ReportUpload() {
           setSelectedWeek(recentWeek)
           setActualLoadedYear(recentYear)
           setActualLoadedWeek(recentWeek)
+          // Load available weeks for initial year (no category filter on first load)
+          const labels = await getCwLabelsForYear(parseInt(recentYear))
+          setAvailableWeeks(labels)
         } else {
           // Fallback to current date
           console.log('No data found at all, using current date as fallback');
           setSelectedYear(currentYearStr)
           setSelectedWeek(currentWeekStr)
+          // Load available weeks for initial year (no category filter on first load)
+          const labels = await getCwLabelsForYear(currentYearLocal)
+          setAvailableWeeks(labels)
         }
-        
-        // Load available weeks for the selected year
-        const labels = await getCwLabelsForYear(
-          parseInt(currentYearStr),
-          selectedCategory && selectedCategory !== "all" ? selectedCategory : undefined
-        );
-        setAvailableWeeks(labels);
-        console.log(`Loaded ${labels.size} available weeks for year ${currentYearStr}`);
         
       } catch (error) {
         console.error("Failed to set intelligent defaults:", error)
         // Fallback to current date
-        setSelectedYear(currentYear.toString())
+        const currentYearLocal = new Date().getFullYear()
+        setSelectedYear(currentYearLocal.toString())
         setSelectedWeek(`CW${getCurrentWeek().toString().padStart(2, "0")}`)
+        // Load available weeks for initial year (no category filter on first load)
+        const labels = await getCwLabelsForYear(currentYearLocal)
+        setAvailableWeeks(labels)
       }
     }
     
     void setIntelligentDefaults()
-  }, [currentYear, selectedCategory])
+  }, [])
 
   const handleReportContentChange = (reportId: string, content: string) => {
     setReports((prev) =>
@@ -427,7 +435,15 @@ export function ReportUpload() {
           setProcessingStatus(prev => ({ ...prev, [file.name]: "processing" }))
           
           const { uploadSingle } = await import("@/lib/api/reports")
-          const res = await uploadSingle(file, useLlmParser)
+          
+          // Pass selected year, week, and category if available
+          const res = await uploadSingle(
+            file, 
+            useLlmParser,
+            selectedYear,
+            selectedWeek,
+            category
+          )
           
           // Start task monitoring
           if (res.taskId) {
@@ -491,7 +507,15 @@ export function ReportUpload() {
           setProcessingStatus(prev => ({ ...prev, [file.name]: "processing" }))
           
           const { persistUpload } = await import("@/lib/api/reports")
-          const res = await persistUpload(file, useLlmParser, false) // Don't force import initially
+          // Pass selected year, week, and category if available
+          const res = await persistUpload(
+            file, 
+            useLlmParser, 
+            false, // Don't force import initially
+            selectedYear,
+            selectedWeek,
+            category
+          )
           
           // Check if it's a duplicate file response
           if (res.status === "duplicate_detected") {
@@ -576,7 +600,13 @@ export function ReportUpload() {
     setIsUploading(true)
     try {
       const { uploadBulk } = await import("@/lib/api/reports")
-      const res = await uploadBulk(bulkFiles, useLlmParser)
+      const res = await uploadBulk(
+        bulkFiles, 
+        useLlmParser,
+        selectedYear,
+        selectedWeek,
+        selectedCategory !== 'all' ? selectedCategory : undefined
+      )
       const results = res.results.map((r: any) => (
         r.status === "ok"
           ? {
@@ -621,7 +651,15 @@ export function ReportUpload() {
         setProcessingStatus(prev => ({ ...prev, [file.name]: "processing" }))
         
         const { persistUpload } = await import("@/lib/api/reports")
-        const res = await persistUpload(file, useLlm, true) // Force import
+        // Pass selected year, week, and category if available
+        const res = await persistUpload(
+          file, 
+          useLlm, 
+          true, // Force import
+          selectedYear,
+          selectedWeek,
+          duplicateFileDialog.category
+        )
         
         // Handle the response (should be successful now)
         if (res.status !== "duplicate_detected") {
@@ -736,7 +774,7 @@ export function ReportUpload() {
                     getWeeksForYear(Number.parseInt(selectedYear)).map((week) => {
                       const hasData = availableWeeks.has(week)
                       return (
-                        <SelectItem key={week} value={week} disabled={!hasData} className={!hasData ? "text-muted-foreground" : undefined}>
+                        <SelectItem key={week} value={week} className={!hasData ? "text-muted-foreground" : undefined}>
                           {week}
                         </SelectItem>
                       )
@@ -956,16 +994,29 @@ export function ReportUpload() {
           {/* File Selection Section */}
           <div className="space-y-6">
             <div>
-              <h3 className="text-xl font-semibold mb-6">{t("fileSelection")}</h3>
+              <h3 className="text-xl font-semibold mb-2">{t("fileSelection")}</h3>
+              {(!selectedYear || !selectedWeek) && (
+                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-md text-amber-800">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4" />
+                    <p className="text-sm font-medium">
+                      Please select a year and week above. Files will be assigned to the selected period.
+                    </p>
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-4 gap-4">
                 {["DEV", "EPC", "Finance", "Investment"].map((category) => {
+                  const isSelected = selectedCategory === category || selectedCategory === 'all';
                   return (
                     <div
                       key={category}
                       className={`border-2 border-dashed rounded-lg p-6 text-center space-y-4 min-h-[180px] transition-colors cursor-pointer ${
                         dragOverCategory === category 
                           ? "border-primary bg-primary/5" 
-                          : "border-muted-foreground/25 hover:border-primary/50"
+                          : isSelected 
+                            ? "border-primary/50 bg-primary/5" 
+                            : "border-muted-foreground/25 hover:border-primary/50"
                       }`}
                       onDragEnter={(e) => {
                         e.preventDefault();
@@ -1001,20 +1052,25 @@ export function ReportUpload() {
                         }
                       }}
                     >
-                      <h4 className="font-semibold text-lg">{category}</h4>
-                      <div className="space-y-3">
-                        <p className="text-muted-foreground text-sm">{t("dragOrClickToUpload")}</p>
-                        <div className="relative">
-                          <input
-                            type="file"
-                            accept=".docx"
-                            onChange={(e) => handleFileSelect(category, e.target.files?.[0] || null)}
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                          />
-                          <Button variant="outline" className="w-full bg-transparent py-2 text-sm">
-                            {uploadFiles[category] ? uploadFiles[category]?.name : t("chooseFile")}
-                          </Button>
-                        </div>
+              <h4 className="font-semibold text-lg">{category}</h4>
+              {selectedYear && selectedWeek && (
+                <div className="bg-primary/10 px-2 py-1 rounded text-xs font-medium text-primary">
+                  {selectedYear} / {selectedWeek}
+                </div>
+              )}
+              <div className="space-y-3">
+                <p className="text-muted-foreground text-sm">{t("dragOrClickToUpload")}</p>
+                <div className="relative">
+                  <input
+                    type="file"
+                    accept=".docx"
+                    onChange={(e) => handleFileSelect(category, e.target.files?.[0] || null)}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                  <Button variant="outline" className="w-full bg-transparent py-2 text-sm">
+                    {uploadFiles[category] ? uploadFiles[category]?.name : t("chooseFile")}
+                  </Button>
+                </div>
                         {uploadFiles[category] && uploadFiles[category]?.name && processingStatus[uploadFiles[category]?.name || ""] && (
                           <div className="mt-2">
                             {processingStatus[uploadFiles[category]?.name || ""] === "processing" && (

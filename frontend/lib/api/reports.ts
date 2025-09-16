@@ -75,13 +75,30 @@ export interface TaskUpdate {
   result_count?: number;
 }
 
-export async function uploadSingle(file: File, useLlm: boolean = false): Promise<SingleUploadResponse> {
+export async function uploadSingle(
+  file: File, 
+  useLlm: boolean = false,
+  overrideYear?: string,
+  overrideWeek?: string,
+  overrideCategory?: string
+): Promise<SingleUploadResponse> {
   const form = new FormData();
   form.append("file", file, file.name);
   
   const url = new URL(`${BASE_URL.replace(/\/$/, "")}/reports/upload`);
   if (useLlm) {
     url.searchParams.set("use_llm", "true");
+  }
+  
+  // Add override parameters if provided
+  if (overrideYear) {
+    url.searchParams.set("override_year", overrideYear);
+  }
+  if (overrideWeek) {
+    url.searchParams.set("override_week", overrideWeek);
+  }
+  if (overrideCategory) {
+    url.searchParams.set("override_category", overrideCategory);
   }
   
   const res = await fetch(url.toString(), {
@@ -97,7 +114,13 @@ export async function uploadSingle(file: File, useLlm: boolean = false): Promise
   return (await res.json()) as SingleUploadResponse;
 }
 
-export async function uploadBulk(files: File[], useLlm: boolean = false): Promise<BulkUploadResponse> {
+export async function uploadBulk(
+  files: File[], 
+  useLlm: boolean = false,
+  overrideYear?: string,
+  overrideWeek?: string,
+  overrideCategory?: string
+): Promise<BulkUploadResponse> {
   const form = new FormData();
   for (const f of files) {
     form.append("files", f, f.name);
@@ -106,6 +129,17 @@ export async function uploadBulk(files: File[], useLlm: boolean = false): Promis
   const url = new URL(`${BASE_URL.replace(/\/$/, "")}/reports/upload/bulk`);
   if (useLlm) {
     url.searchParams.set("use_llm", "true");
+  }
+  
+  // Add override parameters if provided
+  if (overrideYear) {
+    url.searchParams.set("override_year", overrideYear);
+  }
+  if (overrideWeek) {
+    url.searchParams.set("override_week", overrideWeek);
+  }
+  if (overrideCategory) {
+    url.searchParams.set("override_category", overrideCategory);
   }
   
   const res = await fetch(url.toString(), {
@@ -197,7 +231,14 @@ export async function checkDuplicate(file: File): Promise<CheckDuplicateResponse
   return (await res.json()) as CheckDuplicateResponse;
 }
 
-export async function persistUpload(file: File, useLlm: boolean = false, forceImport: boolean = false): Promise<PersistUploadResponse | DuplicateFileResponse> {
+export async function persistUpload(
+  file: File, 
+  useLlm: boolean = false, 
+  forceImport: boolean = false,
+  overrideYear?: string,
+  overrideWeek?: string,
+  overrideCategory?: string
+): Promise<PersistUploadResponse | DuplicateFileResponse> {
   const form = new FormData();
   form.append("file", file, file.name);
   
@@ -207,6 +248,17 @@ export async function persistUpload(file: File, useLlm: boolean = false, forceIm
   }
   if (forceImport) {
     url.searchParams.set("force_import", "true");
+  }
+  
+  // Add override parameters if provided
+  if (overrideYear) {
+    url.searchParams.set("override_year", overrideYear);
+  }
+  if (overrideWeek) {
+    url.searchParams.set("override_week", overrideWeek);
+  }
+  if (overrideCategory) {
+    url.searchParams.set("override_category", overrideCategory);
   }
   
   const res = await fetch(url.toString(), {
