@@ -6,6 +6,7 @@ Create Date: 2025-08-26 00:30:00
 
 """
 from alembic import op
+import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
@@ -16,13 +17,16 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute(
-        """
-        ALTER TABLE project_history
-        ADD CONSTRAINT ck_history_category
-        CHECK (category IS NULL OR category IN ('Development','EPC','Finance','Investment'))
-        """
-    )
+    bind = op.get_bind()
+    exists = bind.execute(sa.text("SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='ck_history_category')")).scalar()
+    if not exists:
+        op.execute(
+            """
+            ALTER TABLE project_history
+            ADD CONSTRAINT ck_history_category
+            CHECK (category IS NULL OR category IN ('Development','EPC','Finance','Investment'))
+            """
+        )
 
 
 def downgrade() -> None:

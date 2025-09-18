@@ -17,7 +17,14 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("project_history", sa.Column("source_text", sa.Text(), nullable=True))
+    bind = op.get_bind()
+    col_exists = bind.execute(
+        sa.text(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='project_history' AND column_name='source_text')"
+        )
+    ).scalar()
+    if not col_exists:
+        op.add_column("project_history", sa.Column("source_text", sa.Text(), nullable=True))
 
 
 def downgrade() -> None:

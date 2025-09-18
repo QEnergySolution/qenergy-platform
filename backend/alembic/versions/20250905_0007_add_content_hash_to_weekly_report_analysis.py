@@ -18,7 +18,14 @@ depends_on = None
 
 def upgrade():
     """Add content_hash column to weekly_report_analysis table"""
-    op.add_column('weekly_report_analysis', sa.Column('content_hash', sa.String(32), nullable=True))
+    bind = op.get_bind()
+    col_exists = bind.execute(
+        sa.text(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='weekly_report_analysis' AND column_name='content_hash')"
+        )
+    ).scalar()
+    if not col_exists:
+        op.add_column('weekly_report_analysis', sa.Column('content_hash', sa.String(32), nullable=True))
 
 
 def downgrade():

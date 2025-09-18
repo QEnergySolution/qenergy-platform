@@ -6,6 +6,7 @@ Create Date: 2025-09-05 17:00:00
 
 """
 from alembic import op
+import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
@@ -16,19 +17,28 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Drop the old unique constraint (try both possible names)
-    try:
-        op.drop_constraint("uq_history_project_code_log_date", "project_history", type_="unique")
-    except Exception:
-        # Fallback to auto-generated name
-        op.drop_constraint("project_history_project_code_log_date_key", "project_history", type_="unique")
-    
-    # Add the new unique constraint with category
-    op.create_unique_constraint(
-        "uq_history_project_code_log_date_category", 
-        "project_history", 
-        ["project_code", "log_date", "category"]
-    )
+    bind = op.get_bind()
+    # Drop the old unique constraint if it exists (try both names)
+    for old_name in ("uq_history_project_code_log_date", "project_history_project_code_log_date_key"):
+        exists = bind.execute(sa.text("SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conname=:n)"), {"n": old_name}).scalar()
+        if exists:
+            try:
+                op.drop_constraint(old_name, "project_history", type_="unique")
+            except Exception:
+                pass
+
+    # Add the new unique constraint with category if missing
+    new_name = "uq_history_project_code_log_date_category"
+    exists_new = bind.execute(sa.text("SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conname=:n)"), {"n": new_name}).scalar()
+    if not exists_new:
+        try:
+            op.create_unique_constraint(
+                new_name,
+                "project_history",
+                ["project_code", "log_date", "category"],
+            )
+        except Exception:
+            pass
 
 
 def downgrade() -> None:

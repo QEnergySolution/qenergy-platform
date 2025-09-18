@@ -18,17 +18,28 @@ depends_on = None
 
 def upgrade():
     # Add nullable project_name column
-    op.add_column('project_history', sa.Column('project_name', sa.String(length=255), nullable=True))
+    bind = op.get_bind()
+    col_exists = bind.execute(
+        sa.text(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='project_history' AND column_name='project_name')"
+        )
+    ).scalar()
+    if not col_exists:
+        op.add_column('project_history', sa.Column('project_name', sa.String(length=255), nullable=True))
 
     # Backfill from projects table where possible
-    op.execute(
-        """
-        UPDATE project_history ph
-        SET project_name = p.project_name
-        FROM projects p
-        WHERE p.project_code = ph.project_code AND ph.project_name IS NULL
-        """
-    )
+    try:
+        op.execute(
+            """
+            UPDATE project_history ph
+            SET project_name = p.project_name
+            FROM projects p
+            WHERE p.project_code = ph.project_code AND ph.project_name IS NULL
+            """
+        )
+    except Exception:
+        # If projects table is not present for some reason, ignore backfill
+        pass
 
 
 def downgrade():
