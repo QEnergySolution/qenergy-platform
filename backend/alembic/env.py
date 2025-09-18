@@ -4,6 +4,13 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from alembic import context
+try:
+    # Load environment variables from backend/.env so DATABASE_URL is available
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    # If python-dotenv is not installed, proceed with system environment
+    pass
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

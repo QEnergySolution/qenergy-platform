@@ -38,7 +38,7 @@ is_service_running() {
 start_postgres_macos() {
     if ! is_service_running 5432; then
         print_status "Starting PostgreSQL..."
-        brew services start postgresql@14
+        brew services start postgresql@16 2>/dev/null || brew services start postgresql@14
         sleep 3
         print_success "PostgreSQL started"
     else
@@ -72,6 +72,10 @@ start_backend_linux() {
             source /opt/conda/etc/profile.d/conda.sh
         fi
         conda activate qenergy-backend
+        # Bootstrap DB and run migrations before starting backend
+        cd ..
+        bootstrap_and_migrate
+        cd backend
         uvicorn app.main:app --reload --port 8002 --host 0.0.0.0 &
         cd ..
         sleep 5
@@ -105,6 +109,10 @@ start_backend_macos() {
             source $HOME/miniconda3/etc/profile.d/conda.sh
         fi
         conda activate qenergy-backend
+        # Bootstrap DB and run migrations before starting backend
+        cd ..
+        bootstrap_and_migrate
+        cd backend
         uvicorn app.main:app --reload --port 8002 --host 0.0.0.0 &
         cd ..
         sleep 5
@@ -202,12 +210,77 @@ stop_services() {
     
     # Stop PostgreSQL (macOS)
     if [[ "$(detect_os)" == "macos" ]]; then
-        brew services stop postgresql@14 2>/dev/null || true
+        brew services stop postgresql@16 2>/dev/null || brew services stop postgresql@14 2>/dev/null || true
     else
         sudo systemctl stop postgresql 2>/dev/null || true
     fi
     
     print_success "All services stopped"
+}
+
+# Function to bootstrap DB (once) and run Alembic migrations safely
+bootstrap_and_migrate() {
+    print_status "Bootstrapping database and applying migrations..."
+
+    local BACKEND_DIR="backend"
+    local ENV_FILE="$BACKEND_DIR/.env"
+    local DB_URL=""
+
+    if [[ -f "$ENV_FILE" ]]; then
+        DB_URL=$(grep -E '^DATABASE_URL=' "$ENV_FILE" | sed 's/^DATABASE_URL=//')
+    fi
+
+    if [[ -z "$DB_URL" ]]; then
+        print_warning "DATABASE_URL not found in backend/.env; skipping bootstrap and running migrations using Alembic's .env loading"
+    fi
+
+    # If we have a DB URL, check schema state
+    local TABLE_COUNT=""
+    local HAVE_ALEMBIC=""
+    local HAVE_CORE=""
+    if [[ -n "$DB_URL" ]]; then
+        if ! TABLE_COUNT=$(psql "$DB_URL" -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';" 2>/dev/null); then
+            print_warning "Could not inspect database schema; proceeding to migrations"
+        fi
+        HAVE_ALEMBIC=$(psql "$DB_URL" -tAc "SELECT to_regclass('public.alembic_version') IS NOT NULL;" 2>/dev/null || echo "f")
+        HAVE_CORE=$(psql "$DB_URL" -tAc "SELECT to_regclass('public.projects') IS NOT NULL;" 2>/dev/null || echo "f")
+    fi
+
+    # Activate conda and run commands from backend directory so Alembic can load .env
+    pushd "$BACKEND_DIR" >/dev/null
+    # Source conda (macOS and Linux)
+    if [[ -f "/opt/homebrew/Caskroom/miniforge/base/etc/profile.d/conda.sh" ]]; then
+        source /opt/homebrew/Caskroom/miniforge/base/etc/profile.d/conda.sh
+    elif [[ -f "$HOME/miniforge3/etc/profile.d/conda.sh" ]]; then
+        source $HOME/miniforge3/etc/profile.d/conda.sh
+    elif [[ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]]; then
+        source $HOME/miniconda3/etc/profile.d/conda.sh
+    elif [[ -f "/opt/conda/etc/profile.d/conda.sh" ]]; then
+        source /opt/conda/etc/profile.d/conda.sh
+    fi
+    conda activate qenergy-backend || true
+
+    # If schema empty, run setup SQL once and stamp baseline
+    if [[ -n "$TABLE_COUNT" && "$TABLE_COUNT" == "0" ]]; then
+        print_status "Schema empty; running setup-database.sql"
+        if ! psql "$DB_URL" -v ON_ERROR_STOP=1 -f "setup-database.sql"; then
+            print_error "setup-database.sql failed"
+            popd >/dev/null
+            exit 1
+        fi
+        print_status "Stamping Alembic baseline to 20250826_0001"
+        alembic stamp 20250826_0001 || { print_error "Alembic stamp failed"; popd >/dev/null; exit 1; }
+    elif [[ "$HAVE_ALEMBIC" != "t" && "$HAVE_CORE" == "t" ]]; then
+        # Existing tables but no Alembic history: stamp baseline to avoid duplicate-create
+        print_status "Existing tables detected without Alembic history; stamping baseline to 20250826_0001"
+        alembic stamp 20250826_0001 || { print_error "Alembic stamp failed"; popd >/dev/null; exit 1; }
+    else
+        print_status "Bootstrap not needed; proceeding to migrations"
+    fi
+
+    # Always run migrations to head
+    alembic upgrade head || { print_error "Alembic upgrade failed"; popd >/dev/null; exit 1; }
+    popd >/dev/null
 }
 
 # Main function
