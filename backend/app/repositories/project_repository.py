@@ -1,9 +1,11 @@
 from typing import Dict, List, Optional, Tuple, Any
-from sqlalchemy import select, update, desc, asc, func, or_, and_
+from sqlalchemy import select, update, delete, desc, asc, func, or_, and_
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from ..models.project import Project
+from ..models.project_history import ProjectHistory
+from ..models.weekly_report_analysis import WeeklyReportAnalysis
 from ..schemas.project import ProjectCreate, ProjectUpdate, ProjectBulkUpsertRow, ProjectBulkUpsertError
 
 
@@ -172,6 +174,37 @@ class ProjectRepository:
         
         # Return True if any rows were affected
         return result.rowcount > 0
+
+    def hard_delete(self, project_code: str) -> bool:
+        """
+        Permanently delete a project and its dependent records.
+        Returns True if a project was deleted, False if not found.
+        """
+        # Check existence
+        project = self.get_by_code(project_code)
+        if not project:
+            return False
+
+        # Delete dependents first to satisfy FK constraints
+        # project_history
+        self.db.execute(
+            delete(ProjectHistory).where(ProjectHistory.project_code == project_code)
+        )
+
+        # weekly_report_analysis (model name may differ)
+        try:
+            self.db.execute(
+                delete(WeeklyReportAnalysis).where(WeeklyReportAnalysis.project_code == project_code)
+            )
+        except Exception:
+            # If model/table not present, ignore
+            pass
+
+        # Delete the project itself
+        self.db.execute(
+            delete(Project).where(Project.project_code == project_code)
+        )
+        return True
 
     def bulk_upsert(
         self,

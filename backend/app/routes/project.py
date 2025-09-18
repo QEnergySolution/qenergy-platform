@@ -128,21 +128,24 @@ def update_project(project_code: str, project: ProjectUpdate, db: Session = Depe
 @router.delete("/{project_code}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_project(project_code: str, db: Session = Depends(get_db)):
     """
-    Soft delete a project (set status=0) by its business key (project_code)
+    Hard delete a project by its business key (project_code).
+    Also removes dependent rows to satisfy FK constraints.
     """
     repo = ProjectRepository(db)
     
     try:
-        # In a real app, get the user from auth context
-        result = repo.soft_delete(project_code, "web_user")
+        deleted = repo.hard_delete(project_code)
         
-        if not result:
+        if not deleted:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Project with code '{project_code}' not found"
             )
         
         db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(
