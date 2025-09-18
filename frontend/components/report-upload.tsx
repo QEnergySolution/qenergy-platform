@@ -4,16 +4,17 @@ import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { Switch } from "@/components/ui/switch"
+// removed unused Switch import
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { Upload, Save, X, CheckCircle, FileText, Brain, Zap, Clock, AlertCircle, Eye, Calendar, User, FolderOpen, RefreshCw, History, PanelRightClose, PanelRightOpen } from "lucide-react"
+import { Upload, Save, X, CheckCircle, FileText, Brain, Clock, AlertCircle, Eye, Calendar, User, FolderOpen, RefreshCw, History, PanelRightClose, Settings } from "lucide-react"
 import { useLanguage } from "@/hooks/use-language"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { ScrollArea } from "@/components/ui/scroll-area"
+// removed unused table imports
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+// removed unused ScrollArea import
 import { getProjectHistory, getCwLabelsForYear, type ProjectHistoryFilters } from "@/lib/api/reports"
 
 interface ReportData {
@@ -98,9 +99,41 @@ export function ReportUpload() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'upload' | 'history'>('upload')
+  const [preferencesOpen, setPreferencesOpen] = useState(false)
+  const [parserPreferenceDraft, setParserPreferenceDraft] = useState<"simple" | "ai">("simple")
 
   const currentYear = new Date().getFullYear()
   const years = Array.from({ length: currentYear - 2024 + 1 }, (_, i) => 2024 + i)
+  // Initialize parsing preference from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("qenergy-parser-preference")
+      if (saved === "ai") {
+        setUseLlmParser(true)
+      } else {
+        setUseLlmParser(false)
+      }
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  // Persist parsing preference
+  useEffect(() => {
+    try {
+      localStorage.setItem("qenergy-parser-preference", useLlmParser ? "ai" : "simple")
+    } catch {
+      // ignore
+    }
+  }, [useLlmParser])
+
+  // Sync draft when opening preferences
+  useEffect(() => {
+    if (preferencesOpen) {
+      setParserPreferenceDraft(useLlmParser ? "ai" : "simple")
+    }
+  }, [preferencesOpen, useLlmParser])
+
   
   const categories = [
     { value: "Development", label: "Development" },
@@ -718,10 +751,7 @@ export function ReportUpload() {
             View Report Upload History
           </Button>
           <Button
-            onClick={() => {
-              setActiveTab('upload')
-              setSidebarOpen(true)
-            }}
+            onClick={handleUploadReport}
             className="bg-green-600 hover:bg-green-700 text-white shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105"
             size="lg"
           >
@@ -923,9 +953,14 @@ export function ReportUpload() {
                   {selectedYear} / {selectedWeek}
                 </span>
               </div>
-              <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
+              <div className="flex items-center gap-1">
+                <Button aria-label="Preferences" variant="ghost" size="icon" onClick={() => setPreferencesOpen(true)}>
+                  <Settings className="w-5 h-5" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
                 <X className="w-5 h-5" />
-              </Button>
+                </Button>
+              </div>
             </div>
 
             {/* Tabs */}
@@ -961,35 +996,6 @@ export function ReportUpload() {
             <div className="flex-1 overflow-y-auto">
               {activeTab === 'upload' ? (
                 <div className="p-6 space-y-6">
-
-          {/* LLM Parser Toggle */}
-          <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
-            <div className="flex items-center justify-between">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Brain className="w-5 h-5 text-blue-600" />
-                  <Label htmlFor="llm-toggle" className="text-lg font-semibold">AI-Powered Parsing</Label>
-                  <Badge variant={useLlmParser ? "default" : "secondary"} className="ml-2">
-                    {useLlmParser ? "ENABLED" : "DISABLED"}
-                  </Badge>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {useLlmParser 
-                    ? "🧠 AI will intelligently extract multiple projects and detailed information from your documents"
-                    : "📝 Standard parsing will extract basic content as a single summary entry"
-                  }
-                </p>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Zap className={`w-4 h-4 ${useLlmParser ? 'text-yellow-500' : 'text-gray-400'}`} />
-                <Switch
-                  id="llm-toggle"
-                  checked={useLlmParser}
-                  onCheckedChange={setUseLlmParser}
-                />
-              </div>
-            </div>
-          </div>
 
           {/* File Selection Section */}
           <div className="space-y-6">
@@ -1599,6 +1605,61 @@ export function ReportUpload() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Preferences Dialog */}
+      <Dialog open={preferencesOpen} onOpenChange={setPreferencesOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings className="w-5 h-5" />
+              Upload Preferences
+            </DialogTitle>
+            <DialogDescription>
+              Choose how reports should be parsed by default.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-sm font-medium">Parsing Mode</Label>
+              <RadioGroup
+                className="mt-3 grid grid-cols-1 gap-3"
+                value={parserPreferenceDraft}
+                onValueChange={(v) => setParserPreferenceDraft(v as "simple" | "ai")}
+              >
+                <div className="flex items-center gap-3 p-3 border rounded-md">
+                  <RadioGroupItem value="simple" id="parser-simple" />
+                  <div className="flex-1">
+                    <Label htmlFor="parser-simple" className="font-medium flex items-center gap-2">
+                      <FileText className="w-4 h-4" /> Simple parsing
+                    </Label>
+                    <div className="text-sm text-muted-foreground">Default. Extracts a single summary entry.</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 p-3 border rounded-md">
+                  <RadioGroupItem value="ai" id="parser-ai" />
+                  <div className="flex-1">
+                    <Label htmlFor="parser-ai" className="font-medium flex items-center gap-2">
+                      <Brain className="w-4 h-4" /> AI parsing
+                    </Label>
+                    <div className="text-sm text-muted-foreground">Extracts multiple projects and details.</div>
+                  </div>
+                </div>
+              </RadioGroup>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setPreferencesOpen(false)}>Cancel</Button>
+              <Button
+                onClick={() => {
+                  setUseLlmParser(parserPreferenceDraft === "ai")
+                  setPreferencesOpen(false)
+                }}
+              >
+                Save
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
