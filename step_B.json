@@ -1,0 +1,82 @@
+{
+  "run_label": "step_B",
+  "input": "/Users/yuxin.xue/Projects/qenergy-platform/uploads/Test Data/CW32/CW32_Weekly Report_DEV.docx",
+  "elapsed_ms": 92,
+  "basic_metrics": {
+    "rows": 40,
+    "unique_titles": 34,
+    "empty_summary_ratio": 0.0,
+    "avg_summary_len": 226.8
+  },
+  "samples": [
+    {
+      "title": "Sisoneras 1 - CW32",
+      "summary_head": "Building License (Terrapower): The building license for Terrapower was granted on July 21. We are currently coordinating with the relevant departments to submit"
+    },
+    {
+      "title": "Sisoneras 2 - CW32",
+      "summary_head": "Building License (Terrapower): The building license for Terrapower was granted on July 21. We are currently coordinating with the relevant departments to submit"
+    },
+    {
+      "title": "Clave 1 - CW32",
+      "summary_head": "Pipeline in Spain (Mid stage: DIA)\n1) All project schedules above reflect the latest date of the several plants in the cluster\n2) RTB dates in EPC schedule refl"
+    },
+    {
+      "title": "Iron 1 - CW32",
+      "summary_head": "Pipeline in Spain (Mid stage: DIA)\n1) All project schedules above reflect the latest date of the several plants in the cluster\n2) RTB dates in EPC schedule refl"
+    },
+    {
+      "title": "Greencar 1 - CW32",
+      "summary_head": "(Spain) Carmona 3_ESS 25MW\nLand: Waiting for BRUC to sign the contract to transfer the land to Teodomiro Renovables (Gridco). But BRUC has informed us that they"
+    },
+    {
+      "title": "Greencar 2 - CW32",
+      "summary_head": "(Spain) Carmona 3_ESS 25MW\nLand: Waiting for BRUC to sign the contract to transfer the land to Teodomiro Renovables (Gridco). But BRUC has informed us that they"
+    },
+    {
+      "title": "Greencar 3 - CW32",
+      "summary_head": "(Spain) Carmona 3_ESS 25MW\nLand: Waiting for BRUC to sign the contract to transfer the land to Teodomiro Renovables (Gridco). But BRUC has informed us that they"
+    },
+    {
+      "title": "Boedo 1 - CW32",
+      "summary_head": "(Spain) Herrera 95.38 MW\nMatrix incorporation to the IAE (Phase 2 Gridco) was signed on July 22nd at the notary.\nIndustry Palencia has granted an extension for "
+    },
+    {
+      "title": "Boedo 2 - CW32",
+      "summary_head": "(Spain) Herrera 95.38 MW\nMatrix incorporation to the IAE (Phase 2 Gridco) was signed on July 22nd at the notary.\nIndustry Palencia has granted an extension for "
+    },
+    {
+      "title": "Boedo 1 - CW32",
+      "summary_head": "The Contentious-Administrative Court has admitted the appeal filed by the Herrera City Council against the dismissal order of the contentious-administrative com"
+    }
+  ],
+  "internal_metrics": {
+    "total_blocks": 84,
+    "block_kinds_count": {
+      "paragraph": 28,
+      "bullet": 56
+    },
+    "candidate_slices": 84,
+    "accepted_sections": 40,
+    "alias_hits": 19,
+    "generic_hits": 20,
+    "cluster_expansions": 22,
+    "low_conf_count": 26,
+    "low_conf_samples": [
+      "Hermann",
+      "Goblet",
+      "applying for PV",
+      "Taurus A-2\nPeñaflor",
+      "we will proceed to engage directly with Iberdrola.\nMudejar",
+      "relative to sectorial permits of private and phase 2. Rest and Land issues are clarified and solved.\nAndujar",
+      "All additional documents raised by NP have been prepared and the notification sent to NP on 25th July. Waiting for NP feedback\nAlmodovar",
+      "Hermann",
+      "Direct Nego",
+      "Direct Nego hybrid"
+    ],
+    "dup_filtered_count": 23,
+    "avg_summary_len": 226.8,
+    "empty_summary_ratio": 0.0,
+    "elapsed_ms": 80
+  }
+}

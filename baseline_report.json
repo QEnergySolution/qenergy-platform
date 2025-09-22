@@ -1,0 +1,53 @@
+{
+  "run_label": "baseline",
+  "input": "/Users/yuxin.xue/Projects/qenergy-platform/uploads/Test Data/CW32/CW32_Weekly Report_DEV.docx",
+  "elapsed_ms": 61,
+  "basic_metrics": {
+    "rows": 39,
+    "unique_titles": 33,
+    "empty_summary_ratio": 0.0,
+    "avg_summary_len": 373.9230769230769
+  },
+  "samples": [
+    {
+      "title": "Sisoneras 1 - CW32",
+      "summary_head": "Sisoneras 1 and 2 has declined to provide coverage for Terrapower.\nTo prevent any delays to the construction schedule, we consulted with City Hall and agreed on"
+    },
+    {
+      "title": "Clave 1 - CW32",
+      "summary_head": "Tordesillas2 ESS 98.28MW\nAs RDL 7/2025 was not ratified by the Congress, the DIA exemption will not be considered for the time being. It will only be reconsider"
+    },
+    {
+      "title": "Iron 1 - CW32",
+      "summary_head": "Tordesillas2 ESS 98.28MW\nAs RDL 7/2025 was not ratified by the Congress, the DIA exemption will not be considered for the time being. It will only be reconsider"
+    },
+    {
+      "title": "Greencar 1 - CW32",
+      "summary_head": "Carmona 3_ESS 25MW\nLand: Waiting for BRUC to sign the contract to transfer the land to Teodomiro Renovables (Gridco). But BRUC has informed us that they are not"
+    },
+    {
+      "title": "Greencar 2 - CW32",
+      "summary_head": "Carmona 3_ESS 25MW\nLand: Waiting for BRUC to sign the contract to transfer the land to Teodomiro Renovables (Gridco). But BRUC has informed us that they are not"
+    },
+    {
+      "title": "Greencar 3 - CW32",
+      "summary_head": "Carmona 3_ESS 25MW\nLand: Waiting for BRUC to sign the contract to transfer the land to Teodomiro Renovables (Gridco). But BRUC has informed us that they are not"
+    },
+    {
+      "title": "Boedo 1 - CW32",
+      "summary_head": "Herrera 95.38 MW\nMatrix incorporation to the IAE (Phase 2 Gridco) was signed on July 22nd at the notary.\nIndustry Palencia has granted an extension for obtainin"
+    },
+    {
+      "title": "Boedo 2 - CW32",
+      "summary_head": "Herrera 95.38 MW\nMatrix incorporation to the IAE (Phase 2 Gridco) was signed on July 22nd at the notary.\nIndustry Palencia has granted an extension for obtainin"
+    },
+    {
+      "title": "Boedo 1 - CW32",
+      "summary_head": "Herrera City Council against the dismissal order of the contentious-administrative complaint related to the"
+    },
+    {
+      "title": "Boedo 2 - CW32",
+      "summary_head": "Herrera City Council against the dismissal order of the contentious-administrative complaint related to the"
+    }
+  ]
+}

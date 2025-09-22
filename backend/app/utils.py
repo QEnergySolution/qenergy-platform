@@ -25,8 +25,19 @@ from docx import Document
 from fastapi import UploadFile
 from sqlalchemy import text
 from rapidfuzz import process, fuzz
+from time import perf_counter
+
+# Step A: structured blocks
+try:
+    from .parsers.blocks import extract_blocks, build_full_text_and_slices  # type: ignore
+except Exception:  # pragma: no cover
+    extract_blocks = None  # type: ignore
+    build_full_text_and_slices = None  # type: ignore
 
 logger = logging.getLogger(__name__)
+
+# Exposed for diagnostics (no API signature change)
+LAST_PARSE_DOCX_METRICS: dict | None = None
 
 # ------------------------------ filename parsing (unchanged signature/output) ------------------------------
 
@@ -288,6 +299,13 @@ def _find_generic_pattern_mentions(full_text: str,
     # New pattern for (Country) Name (Details) format
     re_country_paren = re.compile(rf"\((?:[^)]+)\)\s*({name_token})\s*\((?:[^)]+)\)", re.IGNORECASE)
 
+    # New pattern: base name followed by multiple indices joined by '+', '&', or 'and'
+    # Examples: "Sisoneras 1 and 2", "Boedo 1 & 2 & 3", "Clave 1 + 2"
+    re_conjoined_indices = re.compile(
+        rf"({name_token})\s+(\d+)(?:\s*(?:\+|\&|and)\s*(\d+))(?:\s*(?:\+|\&|and)\s*(\d+))*",
+        re.IGNORECASE,
+    )
+
     mentions: List[Tuple[int, str, List[str], str]] = []
     low_conf: List[Tuple[str, int, int]] = []
 
@@ -308,6 +326,24 @@ def _find_generic_pattern_mentions(full_text: str,
                 mentions.append((start_pos, s, list(expanded), "cluster"))
                 return
         low_conf.append((s, start_pos, (best_p[1] if best_p else 0)))
+
+    # Handle conjoined indices first to expand into separate names
+    for m in re_conjoined_indices.finditer(full_text):
+        base = (m.group(1) or "").strip()
+        if not base:
+            continue
+        # Collect all numeric groups present in the match
+        nums: List[str] = []
+        for gi in range(2, 10):  # support up to 8 indices
+            try:
+                g = m.group(gi)
+            except IndexError:
+                g = None
+            if g and g.isdigit():
+                nums.append(g)
+        # Create separate names like "base N"
+        for num in nums:
+            try_accept(f"{base} {num}", m.start(1))
 
     for rx in (re_country, re_paren_cap, re_inline_cap, re_country_paren):
         for m in rx.finditer(full_text):
@@ -379,6 +415,84 @@ def _extract_sections_with_near_merge(full_text: str,
     return sections
 
 
+# Step B: slice-based sectioning using candidate boundaries (bullets/tables/paragraph starts/sentence ends)
+def _extract_sections_with_slice_boundaries(
+    full_text: str,
+    pos_to_projects: List[Tuple[int, List[str]]],
+    slice_starts: List[int],
+    heading_starts: List[int] | None = None,
+    *,
+    min_chars: int = 180,
+    max_slices: int = 3,
+) -> List[Tuple[int, int, str]]:
+    if not pos_to_projects:
+        return []
+
+    L = len(full_text)
+    # Ensure slice starts include 0 and are within bounds, sorted unique
+    starts = sorted({s for s in slice_starts if 0 <= s < L} | {0})
+    heading_set = set(heading_starts or [])
+
+    # Augment with simple sentence-ending punctuation followed by newline
+    try:
+        for m in re.finditer(r"[.!?;]\s*\n", full_text):
+            starts.append(m.end())
+    except Exception:
+        pass
+    starts = sorted({s for s in starts if 0 <= s <= L})
+    starts_index_map: Dict[int, int] = {v: i for i, v in enumerate(starts)}
+
+    # Map each mention position to the nearest slice start at or before it
+    def snap_to_start(pos: int) -> int:
+        # binary search for rightmost start <= pos
+        lo, hi = 0, len(starts) - 1
+        best = starts[0]
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            val = starts[mid]
+            if val <= pos:
+                best = val
+                lo = mid + 1
+            else:
+                hi = mid - 1
+        return best
+
+    grouped: Dict[int, List[str]] = {}
+    for pos, projs in pos_to_projects:
+        s = snap_to_start(pos)
+        acc = grouped.setdefault(s, [])
+        for p in projs:
+            if p not in acc:
+                acc.append(p)
+
+    # Build sections per grouped start slice; end is next slice start after s
+    ordered_starts = [s for s in starts if s in grouped]
+    sections: List[Tuple[int, int, str]] = []
+    for idx, s in enumerate(ordered_starts):
+        base_idx = starts_index_map[s]
+        end_idx = base_idx + 1 if (base_idx + 1) < len(starts) else base_idx
+        end = starts[end_idx] if end_idx < len(starts) else L
+        text_slice = full_text[s:end].strip()
+
+        # Expand short slices to include some following slices for context.
+        added = 1
+        while len(text_slice) < min_chars and added < max_slices and (end_idx + 1) < len(starts):
+            # Do not cross a heading boundary at the start of the next slice
+            next_start = starts[end_idx]
+            if next_start in heading_set:
+                break
+            end_idx += 1
+            end = starts[end_idx] if end_idx < len(starts) else L
+            text_slice = full_text[s:end].strip()
+            added += 1
+
+        if not text_slice:
+            continue
+        for p in grouped[s]:
+            sections.append((s, end, p))
+
+    return sections
+
 # ------------------------------ main parser (unchanged signature/output) ------------------------------
 
 def parse_docx_rows(file: UploadFile, cw_label: str, category: str) -> list[dict]:
@@ -417,20 +531,30 @@ def parse_docx_rows(file: UploadFile, cw_label: str, category: str) -> list[dict
         logger.warning("No active projects loaded from CSV; falling back to raw summary.")
     project_set = set(project_names)
 
-    # Collect plain text lines from paragraphs and tables
-    all_lines: list[str] = []
-    for p in document.paragraphs:
-        t = (p.text or "").strip()
-        if t:
-            all_lines.append(t)
-    for table in document.tables:
-        for row in table.rows:
-            cells = [(cell.text or "").strip() for cell in row.cells]
-            cells = [c for c in cells if c]
-            if cells:
-                all_lines.append(" | ".join(cells))
-
-    if not all_lines:
+    # Step A: Structured block extraction (fallback to legacy if unavailable)
+    step_started_ts = perf_counter()
+    blocks = None
+    heading_starts: list[int] = []
+    candidate_slice_starts: list[int] = []
+    if extract_blocks and build_full_text_and_slices:
+        try:
+            blocks = extract_blocks(document)
+            full_text, heading_starts, candidate_slice_starts = build_full_text_and_slices(blocks)
+        except Exception as e:
+            logger.warning(f"Block extraction failed, falling back to legacy: {e}")
+            blocks = None
+            heading_starts = []
+            candidate_slice_starts = []
+    if not blocks:
+        # Fallback: legacy flatten
+        all_lines: list[str] = []
+        for p in document.paragraphs:
+            t = (p.text or "").strip()
+            if t:
+                all_lines.append(t)
+        # Note: temporarily ignore table content in fallback path as well.
+        full_text = "\n".join(all_lines)
+    if not (full_text or "").strip():
         rows.append({
             "category": category,
             "entry_type": "Report",
@@ -443,8 +567,6 @@ def parse_docx_rows(file: UploadFile, cw_label: str, category: str) -> list[dict
             "attachment_url": None,
         })
         return rows
-
-    full_text = "\n".join(all_lines)
 
     # (1) Mentions via alias matching
     alias_mentions, alias_unmatched = _find_alias_mentions(full_text, project_names, cluster_to_projects)
@@ -467,8 +589,18 @@ def parse_docx_rows(file: UploadFile, cw_label: str, category: str) -> list[dict
     # (3) Deduplicate and pack to pos->projects
     pos_to_projects = _dedupe_and_pack(mentions)
 
-    # (4) Section extraction with near-boundary merge
-    sections = _extract_sections_with_near_merge(full_text, pos_to_projects, min_gap=80)
+    # (4) Section extraction: prefer slice-based boundaries if available (Step B)
+    if candidate_slice_starts:
+        sections = _extract_sections_with_slice_boundaries(
+            full_text,
+            pos_to_projects,
+            candidate_slice_starts,
+            heading_starts,
+            min_chars=220,
+            max_slices=3,
+        )
+    else:
+        sections = _extract_sections_with_near_merge(full_text, pos_to_projects, min_gap=80)
 
     # (5) Build output rows
     for start, end, pname in sections:
@@ -510,6 +642,40 @@ def parse_docx_rows(file: UploadFile, cw_label: str, category: str) -> list[dict
             "owner": None,
             "attachment_url": None,
         })
+
+    # Metrics (Step A)
+    global LAST_PARSE_DOCX_METRICS
+    try:
+        expanded_mentions = 0
+        for _pos, _raw, projs, _kind in mentions:
+            expanded_mentions += len(projs)
+        unique_mentions = sum(len(ps) for _p, ps in pos_to_projects)
+        dup_filtered = max(0, expanded_mentions - unique_mentions)
+        elapsed_ms = int((perf_counter() - step_started_ts) * 1000)
+        block_kinds_count: Dict[str, int] = {}
+        total_blocks = 0
+        if blocks:
+            total_blocks = len(blocks)
+            for b in blocks:
+                block_kinds_count[b.kind] = block_kinds_count.get(b.kind, 0) + 1
+        LAST_PARSE_DOCX_METRICS = {
+            "total_blocks": total_blocks,
+            "block_kinds_count": block_kinds_count,
+            "candidate_slices": len(candidate_slice_starts),
+            "accepted_sections": len(sections),
+            "alias_hits": len([m for m in alias_mentions]),
+            "generic_hits": len([m for m in generic_mentions]),
+            "cluster_expansions": len([m for m in (alias_mentions + generic_mentions) if m[3] == "cluster"]),
+            "low_conf_count": len([x for x in low_conf]),
+            "low_conf_samples": [x[0] for x in low_conf[:10]],
+            "dup_filtered_count": dup_filtered,
+            "avg_summary_len": (sum(len((r.get("summary") or "")) for r in rows) / len(rows)) if rows else 0,
+            "empty_summary_ratio": (sum(1 for r in rows if not (r.get("summary") or "").strip()) / len(rows)) if rows else 0,
+            "elapsed_ms": elapsed_ms,
+        }
+        logger.info("parse_docx_rows metrics: %s", LAST_PARSE_DOCX_METRICS)
+    except Exception as _:
+        LAST_PARSE_DOCX_METRICS = None
 
     return rows
 
