@@ -1,12 +1,12 @@
 {
   "run_label": "step_B",
   "input": "/Users/yuxin.xue/Projects/qenergy-platform/uploads/Test Data/CW32/CW32_Weekly Report_DEV.docx",
-  "elapsed_ms": 92,
+  "elapsed_ms": 95,
   "basic_metrics": {
     "rows": 40,
     "unique_titles": 34,
     "empty_summary_ratio": 0.0,
-    "avg_summary_len": 226.8
+    "avg_summary_len": 212.8
   },
   "samples": [
     {
@@ -19,11 +19,11 @@
     },
     {
       "title": "Clave 1 - CW32",
-      "summary_head": "Pipeline in Spain (Mid stage: DIA)\n1) All project schedules above reflect the latest date of the several plants in the cluster\n2) RTB dates in EPC schedule refl"
+      "summary_head": "(Spain) Tordesillas2 ESS 98.28MW\nAs RDL 7/2025 was not ratified by the Congress, the DIA exemption will not be considered for the time being. It will only be re"
     },
     {
       "title": "Iron 1 - CW32",
-      "summary_head": "Pipeline in Spain (Mid stage: DIA)\n1) All project schedules above reflect the latest date of the several plants in the cluster\n2) RTB dates in EPC schedule refl"
+      "summary_head": "(Spain) Tordesillas2 ESS 98.28MW\nAs RDL 7/2025 was not ratified by the Congress, the DIA exemption will not be considered for the time being. It will only be re"
     },
     {
       "title": "Greencar 1 - CW32",
@@ -56,7 +56,7 @@
       "paragraph": 28,
       "bullet": 56
     },
-    "candidate_slices": 84,
+    "candidate_slices": 105,
     "accepted_sections": 40,
     "alias_hits": 19,
     "generic_hits": 20,
@@ -75,8 +75,8 @@
       "Direct Nego hybrid"
     ],
     "dup_filtered_count": 23,
-    "avg_summary_len": 226.8,
+    "avg_summary_len": 212.8,
     "empty_summary_ratio": 0.0,
-    "elapsed_ms": 80
+    "elapsed_ms": 81
   }
 }

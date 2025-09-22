@@ -548,12 +548,20 @@ def parse_docx_rows(file: UploadFile, cw_label: str, category: str) -> list[dict
     if not blocks:
         # Fallback: legacy flatten
         all_lines: list[str] = []
+        strong_slice_starts: list[int] = []
+        country_line_re = re.compile(r"^\(([A-Za-zÀ-ÖØ-öø-ÿ\s]+)\)\s+", re.IGNORECASE)
         for p in document.paragraphs:
             t = (p.text or "").strip()
             if t:
+                if country_line_re.search(t):
+                    # add current offset before pushing line; compute offset as len of existing text + newlines
+                    current_offset = sum(len(x) + 1 for x in all_lines)
+                    strong_slice_starts.append(current_offset)
                 all_lines.append(t)
         # Note: temporarily ignore table content in fallback path as well.
         full_text = "\n".join(all_lines)
+        # merge strong boundaries into candidate slices in fallback path
+        candidate_slice_starts = sorted(set(candidate_slice_starts + strong_slice_starts))
     if not (full_text or "").strip():
         rows.append({
             "category": category,

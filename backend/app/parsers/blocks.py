@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import List, Tuple
 
 from docx.document import Document as DocxDocument
@@ -100,6 +101,9 @@ def build_full_text_and_slices(blocks: List[Block]) -> Tuple[str, List[int], Lis
     heading_starts: List[int] = []
     slice_starts: List[int] = []
 
+    # Strong boundary: country/region anchors like "(Spain) ..."
+    country_line_re = re.compile(r"^\(([A-Za-zÀ-ÖØ-öø-ÿ\s]+)\)\s+", re.IGNORECASE)
+
     offset = 0
     for b in blocks:
         if b.kind == "heading":
@@ -107,11 +111,15 @@ def build_full_text_and_slices(blocks: List[Block]) -> Tuple[str, List[int], Lis
                 if i == 0:
                     heading_starts.append(offset)
                 slice_starts.append(offset)
+                if country_line_re.search(ln):
+                    slice_starts.append(offset)
                 pieces.append(ln)
                 offset += len(ln) + 1  # account for trailing \n when we join
         elif b.kind == "bullet":
             for ln in b.lines:
                 slice_starts.append(offset)
+                if country_line_re.search(ln):
+                    slice_starts.append(offset)
                 pieces.append(ln)
                 offset += len(ln) + 1
         elif b.kind == "paragraph":
@@ -121,11 +129,15 @@ def build_full_text_and_slices(blocks: List[Block]) -> Tuple[str, List[int], Lis
                 if first_in_para:
                     slice_starts.append(offset)
                     first_in_para = False
+                if country_line_re.search(ln):
+                    slice_starts.append(offset)
                 pieces.append(ln)
                 offset += len(ln) + 1
         elif b.kind == "table":
             for ln in b.lines:
                 slice_starts.append(offset)
+                if country_line_re.search(ln):
+                    slice_starts.append(offset)
                 pieces.append(ln)
                 offset += len(ln) + 1
 
