@@ -101,6 +101,7 @@ export function ReportUpload() {
   const [activeTab, setActiveTab] = useState<'upload' | 'history'>('upload')
   const [preferencesOpen, setPreferencesOpen] = useState(false)
   const [parserPreferenceDraft, setParserPreferenceDraft] = useState<"simple" | "ai">("simple")
+  const [duplicateQueue, setDuplicateQueue] = useState<Array<{ file: File; duplicateInfo: any; category: string; useLlm: boolean }>>([])
 
   const currentYear = new Date().getFullYear()
   const years = Array.from({ length: currentYear - 2024 + 1 }, (_, i) => 2024 + i)
@@ -274,7 +275,7 @@ export function ReportUpload() {
 
     // Create EventSource for real-time updates
     try {
-      void import("@/lib/api/reports").then(({ createTaskEventSource }) => {
+      void import("@/lib/api/reports").then(async ({ createTaskEventSource, getTaskStatus }) => {
         const eventSource = createTaskEventSource(taskId)
 
         eventSource.onmessage = (event: MessageEvent) => {
@@ -321,6 +322,35 @@ export function ReportUpload() {
         }
 
         setEventSources(prev => ({ ...prev, [taskId]: eventSource }))
+        
+        // Immediately fetch current status once in case SSE misses early updates
+        try {
+          const current = await getTaskStatus(taskId)
+          setTaskProgresses(prev => ({
+            ...prev,
+            [taskId]: {
+              taskId: current.task_id,
+              fileName,
+              status: current.status,
+              progress: current.progress,
+              message: current.message,
+              currentStep: current.current_step,
+              resultCount: current.result_count,
+              errorMessage: current.error_message
+            }
+          }))
+          // If already completed or failed, close the source early
+          if (current.status === 'completed' || current.status === 'failed') {
+            eventSource.close()
+            setEventSources(prev => {
+              const newSources = { ...prev }
+              delete newSources[taskId]
+              return newSources
+            })
+          }
+        } catch (fetchErr) {
+          console.error('Failed to fetch initial task status:', fetchErr)
+        }
       })
     } catch (error) {
       console.error('Failed to start task monitoring:', error)
@@ -457,176 +487,142 @@ export function ReportUpload() {
     setIsUploading(true)
     setProcessingStatus({})
     setTaskProgresses({})
-    
-    const results: UploadResult[] = []
-    const filesToProcess = Object.entries(uploadFiles).filter(([_, file]) => file)
 
-    for (const [category, file] of filesToProcess) {
-      if (file) {
-        try {
-          // Mark as processing
-          setProcessingStatus(prev => ({ ...prev, [file.name]: "processing" }))
-          
-          const { uploadSingle } = await import("@/lib/api/reports")
-          
-          // Pass selected year, week, and category if available
-          const res = await uploadSingle(
-            file, 
-            useLlmParser,
-            selectedYear,
-            selectedWeek,
-            category
-          )
-          
-          // Start task monitoring
-          if (res.taskId) {
-            startTaskMonitoring(res.taskId, res.fileName)
-          }
-          
-          // Mark as complete
-          setProcessingStatus(prev => ({ ...prev, [file.name]: "complete" }))
-          
-          results.push({
-            category: res.category || category,
-            fileName: res.fileName,
-            projectsAdded: Array.isArray(res.rows) ? res.rows.length : 0,
-            status: "success",
-            parsedWith: res.parsedWith || "simple",
-          })
-        } catch (e) {
-          console.error(`Upload failed for ${file.name}:`, e)
-          
-          // Mark as error
-          setProcessingStatus(prev => ({ ...prev, [file.name]: "error" }))
-          
-          results.push({
-            category,
-            fileName: file.name,
-            projectsAdded: 0,
-            status: "error",
-            errors: [{ code: "UPLOAD_ERROR", message: String(e) }]
-          })
+    const filesToProcess = Object.entries(uploadFiles).filter(([_, file]) => file) as Array<[string, File]>
+    const { uploadSingle } = await import("@/lib/api/reports")
+
+    // Mark all selected files as processing up-front
+    setProcessingStatus(prev => {
+      const next = { ...prev }
+      for (const [, file] of filesToProcess) {
+        next[file.name] = "processing"
+      }
+      return next
+    })
+
+    const promises = filesToProcess.map(async ([category, file]) => {
+      try {
+        const res = await uploadSingle(
+          file,
+          useLlmParser,
+          selectedYear,
+          selectedWeek,
+          category
+        )
+
+        if ((res as any)?.taskId) {
+          startTaskMonitoring((res as any).taskId, (res as any).fileName)
+        }
+
+        setProcessingStatus(prev => ({ ...prev, [file.name]: "complete" }))
+
+        return {
+          category: (res as any).category || category,
+          fileName: (res as any).fileName,
+          projectsAdded: Array.isArray((res as any).rows) ? (res as any).rows.length : 0,
+          status: "success" as const,
+          parsedWith: (res as any).parsedWith || "simple",
+        }
+      } catch (e) {
+        console.error(`Upload failed for ${file.name}:`, e)
+        setProcessingStatus(prev => ({ ...prev, [file.name]: "error" }))
+        return {
+          category,
+          fileName: file.name,
+          projectsAdded: 0,
+          status: "error" as const,
+          errors: [{ code: "UPLOAD_ERROR", message: String(e) }],
         }
       }
-    }
+    })
 
-    setUploadResults(results)
+    const settled = await Promise.all(promises)
+    setUploadResults(settled)
     setIsUploading(false)
 
-    // Clear processing status after showing results for a moment
     setTimeout(() => setProcessingStatus({}), 3000)
-
-    // Reset file selection
-    setUploadFiles({
-      DEV: null,
-      EPC: null,
-      Finance: null,
-      Investment: null,
-    })
+    setUploadFiles({ DEV: null, EPC: null, Finance: null, Investment: null })
   }
 
   const handlePersistToDatabase = async () => {
     setIsUploading(true)
     setProcessingStatus({})
     setTaskProgresses({})
-    
-    const results: UploadResult[] = []
-    const filesToProcess = Object.entries(uploadFiles).filter(([_, file]) => file)
 
-    for (const [category, file] of filesToProcess) {
-      if (file) {
-        try {
-          // Mark as processing
-          setProcessingStatus(prev => ({ ...prev, [file.name]: "processing" }))
-          
-          const { persistUpload } = await import("@/lib/api/reports")
-          // Pass selected year, week, and category if available
-          const res = await persistUpload(
-            file, 
-            useLlmParser, 
-            false, // Don't force import initially
-            selectedYear,
-            selectedWeek,
-            category
-          )
-          
-          // Check if it's a duplicate file response
-          if (res.status === "duplicate_detected") {
-            // Show confirmation dialog
-            setDuplicateFileDialog({
-              isOpen: true,
-              file: file,
-              duplicateInfo: res,
-              category: category,
-              useLlm: useLlmParser
-            })
-            
-            // Mark as pending (user needs to decide)
-            setProcessingStatus(prev => ({ ...prev, [file.name]: "pending" }))
-            
-            results.push({
-              category: category,
-              fileName: file.name,
-              projectsAdded: 0,
-              status: "pending",
-              parsedWith: "simple",
-              message: res.message
-            })
-            continue
-          }
-          
-          // Normal success flow
-          // Start task monitoring
-          if (res.taskId) {
-            startTaskMonitoring(res.taskId, res.fileName)
-          }
-          
-          // Store persist result
-          setPersistResults(prev => ({ ...prev, [file.name]: res }))
-          
-          // Mark as complete
-          setProcessingStatus(prev => ({ ...prev, [file.name]: "complete" }))
-          
-          // Refresh uploads table
-          void loadReportUploads()
-          
-          results.push({
-            category: res.category || category,
-            fileName: res.fileName,
-            projectsAdded: res.rowsCreated || 0,
-            status: "success",
-            parsedWith: res.parsedWith || "simple",
-          })
-        } catch (e) {
-          console.error(`Database persistence failed for ${file.name}:`, e)
-          
-          // Mark as error
-          setProcessingStatus(prev => ({ ...prev, [file.name]: "error" }))
-          
-          results.push({
+    const filesToProcess = Object.entries(uploadFiles).filter(([_, file]) => file) as Array<[string, File]>
+    const { persistUpload } = await import("@/lib/api/reports")
+
+    // Mark all selected files as processing up-front
+    setProcessingStatus(prev => {
+      const next = { ...prev }
+      for (const [, file] of filesToProcess) {
+        next[file.name] = "processing"
+      }
+      return next
+    })
+
+    const resultsAccumulator: UploadResult[] = []
+
+    const promises = filesToProcess.map(async ([category, file]) => {
+      try {
+        const res = await persistUpload(
+          file,
+          useLlmParser,
+          false, // initial attempt, do not force
+          selectedYear,
+          selectedWeek,
+          category
+        )
+
+        if ((res as any).status === "duplicate_detected") {
+          // Queue duplicate for sequential user confirmation
+          setDuplicateQueue(prev => [...prev, { file, duplicateInfo: res, category, useLlm: useLlmParser }])
+          setProcessingStatus(prev => ({ ...prev, [file.name]: "pending" }))
+          resultsAccumulator.push({
             category,
             fileName: file.name,
             projectsAdded: 0,
-            status: "error",
-            errors: [{ code: "PERSISTENCE_ERROR", message: String(e) }]
+            status: "pending",
+            parsedWith: "simple",
+            message: (res as any).message,
           })
+          return
         }
-      }
-    }
 
-    setUploadResults(results)
+        if ((res as any)?.taskId) {
+          startTaskMonitoring((res as any).taskId, (res as any).fileName)
+        }
+
+        setPersistResults(prev => ({ ...prev, [file.name]: res }))
+        setProcessingStatus(prev => ({ ...prev, [file.name]: "complete" }))
+        void loadReportUploads()
+
+        resultsAccumulator.push({
+          category: (res as any).category || category,
+          fileName: (res as any).fileName,
+          projectsAdded: (res as any).rowsCreated || 0,
+          status: "success",
+          parsedWith: (res as any).parsedWith || "simple",
+        })
+      } catch (e) {
+        console.error(`Database persistence failed for ${file.name}:`, e)
+        setProcessingStatus(prev => ({ ...prev, [file.name]: "error" }))
+        resultsAccumulator.push({
+          category,
+          fileName: file.name,
+          projectsAdded: 0,
+          status: "error",
+          errors: [{ code: "PERSISTENCE_ERROR", message: String(e) }],
+        })
+      }
+    })
+
+    await Promise.all(promises)
+    setUploadResults(resultsAccumulator)
     setIsUploading(false)
 
-    // Clear processing status after showing results for a moment
     setTimeout(() => setProcessingStatus({}), 3000)
-
-    // Reset file selection
-    setUploadFiles({
-      DEV: null,
-      EPC: null,
-      Finance: null,
-      Investment: null,
-    })
+    setUploadFiles({ DEV: null, EPC: null, Finance: null, Investment: null })
   }
 
   const handleBulkUpload = async () => {
@@ -675,39 +671,26 @@ export function ReportUpload() {
 
   const handleDuplicateConfirm = async (forceImport: boolean) => {
     const { file, useLlm } = duplicateFileDialog
-    
     if (!file) return
-    
+
     if (forceImport) {
       try {
-        // Mark as processing again
         setProcessingStatus(prev => ({ ...prev, [file.name]: "processing" }))
-        
         const { persistUpload } = await import("@/lib/api/reports")
-        // Pass selected year, week, and category if available
         const res = await persistUpload(
-          file, 
-          useLlm, 
+          file,
+          useLlm,
           true, // Force import
           selectedYear,
           selectedWeek,
           duplicateFileDialog.category
         )
-        
-        // Handle the response (should be successful now)
-        if (res.status !== "duplicate_detected") {
-          // Start task monitoring
-          if (res.taskId) {
-            startTaskMonitoring(res.taskId, res.fileName)
+        if ((res as any).status !== "duplicate_detected") {
+          if ((res as any)?.taskId) {
+            startTaskMonitoring((res as any).taskId, (res as any).fileName)
           }
-          
-          // Store persist result
           setPersistResults(prev => ({ ...prev, [file.name]: res }))
-          
-          // Mark as complete
           setProcessingStatus(prev => ({ ...prev, [file.name]: "complete" }))
-          
-          // Refresh uploads table
           void loadReportUploads()
         }
       } catch (e) {
@@ -715,19 +698,30 @@ export function ReportUpload() {
         setProcessingStatus(prev => ({ ...prev, [file.name]: "error" }))
       }
     } else {
-      // User chose not to import, mark as cancelled
       setProcessingStatus(prev => ({ ...prev, [file.name]: "cancelled" }))
     }
-    
-    // Close dialog
-    setDuplicateFileDialog({
-      isOpen: false,
-      file: null,
-      duplicateInfo: null,
-      category: "",
-      useLlm: false
+
+    // Close current dialog and advance queue
+    setDuplicateFileDialog({ isOpen: false, file: null, duplicateInfo: null, category: "", useLlm: false })
+    setDuplicateQueue(prev => {
+      const [, ...rest] = prev
+      return rest
     })
   }
+
+  // When duplicate queue has items and dialog is not open, show the next one
+  useEffect(() => {
+    if (!duplicateFileDialog.isOpen && duplicateQueue.length > 0) {
+      const next = duplicateQueue[0]
+      setDuplicateFileDialog({
+        isOpen: true,
+        file: next.file,
+        duplicateInfo: next.duplicateInfo,
+        category: next.category,
+        useLlm: next.useLlm,
+      })
+    }
+  }, [duplicateQueue, duplicateFileDialog.isOpen])
 
   return (
     <div className="p-6 space-y-6">
