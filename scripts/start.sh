@@ -28,6 +28,18 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Mode switch: dev (default) or prod
+MODE="${MODE:-dev}"
+
+# Resolve log directory (prefer /var/log, fallback to $HOME/qenergy-logs if not writable)
+LOG_DIR="/var/log"
+if [[ ! -w "$LOG_DIR" ]]; then
+    LOG_DIR="$HOME/qenergy-logs"
+    mkdir -p "$LOG_DIR" 2>/dev/null || true
+fi
+BACKEND_LOG="$LOG_DIR/qenergy-backend.log"
+FRONTEND_LOG="$LOG_DIR/qenergy-frontend.log"
+
 # Function to check if service is running
 is_service_running() {
     local port=$1
@@ -76,7 +88,12 @@ start_backend_linux() {
         cd ..
         bootstrap_and_migrate
         cd backend
-        uvicorn app.main:app --reload --port 8002 --host 0.0.0.0 &
+        if [[ "$MODE" == "prod" ]]; then
+            print_status "Starting backend in production mode (log: $BACKEND_LOG) ..."
+            nohup uvicorn app.main:app --host 0.0.0.0 --port 8002 --workers 2 --timeout-keep-alive 120 --proxy-headers > "$BACKEND_LOG" 2>&1 & disown || true
+        else
+            uvicorn app.main:app --reload --port 8002 --host 0.0.0.0 &
+        fi
         cd ..
         sleep 5
         print_success "Backend started on http://localhost:8002"
@@ -113,7 +130,12 @@ start_backend_macos() {
         cd ..
         bootstrap_and_migrate
         cd backend
-        uvicorn app.main:app --reload --port 8002 --host 0.0.0.0 &
+        if [[ "$MODE" == "prod" ]]; then
+            print_status "Starting backend in production mode (log: $BACKEND_LOG) ..."
+            nohup uvicorn app.main:app --host 0.0.0.0 --port 8002 --workers 2 --timeout-keep-alive 120 --proxy-headers > "$BACKEND_LOG" 2>&1 & disown || true
+        else
+            uvicorn app.main:app --reload --port 8002 --host 0.0.0.0 &
+        fi
         cd ..
         sleep 5
         print_success "Backend started on http://localhost:8002"
@@ -133,7 +155,14 @@ start_frontend() {
                 print_status "Frontend will use NEXT_PUBLIC_API_URL=$API_URL"
             fi
         fi
-        pnpm dev:fe &
+        if [[ "$MODE" == "prod" ]]; then
+            print_status "Building frontend for production..."
+            pnpm -C frontend build
+            print_status "Starting frontend in production mode (log: $FRONTEND_LOG) ..."
+            nohup pnpm -C frontend start --port 3000 > "$FRONTEND_LOG" 2>&1 & disown || true
+        else
+            pnpm dev:fe &
+        fi
         sleep 10
         # Try to detect LAN IP to show a clickable URL for others on the network
         if command -v hostname >/dev/null 2>&1; then
@@ -291,6 +320,10 @@ main() {
     echo
     
     OS=$(detect_os)
+    print_status "Mode: ${MODE}"
+    if [[ "$MODE" == "prod" && "$LOG_DIR" != "/var/log" ]]; then
+        print_warning "No permission to write /var/log; using $LOG_DIR for logs"
+    fi
     
     # Parse command line arguments
     case "${1:-start}" in
