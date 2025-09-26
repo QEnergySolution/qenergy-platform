@@ -589,6 +589,48 @@ export function ReportUpload() {
           return
         }
 
+        if ((res as any).status === "period_exists") {
+          // Ask for overwrite confirmation for this period
+          const exists = res as any
+          const confirmMsg = `A report for ${exists.category} ${exists.cw_label} ${exists.year} already exists with ${exists.existingCount} entries. Do you want to overwrite it?\n\nThis will delete all existing entries for this period and replace them with the newly uploaded data.`
+          const confirmed = window.confirm(confirmMsg)
+          if (!confirmed) {
+            setProcessingStatus(prev => ({ ...prev, [file.name]: "cancelled" }))
+            resultsAccumulator.push({
+              category,
+              fileName: file.name,
+              projectsAdded: 0,
+              status: "error",
+              parsedWith: "simple",
+              errors: [{ code: "USER_CANCELLED", message: "User cancelled overwrite for existing period" }]
+            })
+            return
+          }
+          // Retry with forceImport=true
+          const forced = await persistUpload(
+            file,
+            useLlmParser,
+            true,
+            selectedYear,
+            selectedWeek,
+            category
+          )
+          if ((forced as any)?.taskId) {
+            startTaskMonitoring((forced as any).taskId, (forced as any).fileName)
+          }
+          setPersistResults(prev => ({ ...prev, [file.name]: forced }))
+          setProcessingStatus(prev => ({ ...prev, [file.name]: "complete" }))
+          void loadReportUploads()
+          resultsAccumulator.push({
+            category: (forced as any).category || category,
+            fileName: (forced as any).fileName,
+            projectsAdded: (forced as any).rowsCreated || 0,
+            status: "success",
+            parsedWith: (forced as any).parsedWith || "simple",
+          })
+          return
+        }
+
         if ((res as any)?.taskId) {
           startTaskMonitoring((res as any).taskId, (res as any).fileName)
         }
@@ -1628,7 +1670,7 @@ export function ReportUpload() {
                     <Label htmlFor="parser-simple" className="font-medium flex items-center gap-2">
                       <FileText className="w-4 h-4" /> Simple parsing
                     </Label>
-                    <div className="text-sm text-muted-foreground">Default. Extracts a single summary entry.</div>
+                    <div className="text-sm text-muted-foreground">Rule-based parser. Groups content by detected project names; fast and deterministic.</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 p-3 border rounded-md">
@@ -1637,7 +1679,7 @@ export function ReportUpload() {
                     <Label htmlFor="parser-ai" className="font-medium flex items-center gap-2">
                       <Brain className="w-4 h-4" /> AI parsing
                     </Label>
-                    <div className="text-sm text-muted-foreground">Extracts multiple projects and details.</div>
+                    <div className="text-sm text-muted-foreground">LLM parser. Sectioned and whitelist/cluster-driven; slow and can hallucinate.</div>
                   </div>
                 </div>
               </RadioGroup>

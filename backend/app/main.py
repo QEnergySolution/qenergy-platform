@@ -207,7 +207,7 @@ async def get_upload_project_history(upload_id: str, db: Session = Depends(get_d
             FROM project_history ph
             LEFT JOIN projects p ON p.project_code = ph.project_code
             WHERE ph.source_upload_id = :upload_id
-            ORDER BY ph.created_at DESC
+            ORDER BY ph.created_at ASC
         """), {"upload_id": upload_id}).fetchall()
         
         upload_info = {
@@ -632,6 +632,38 @@ async def persist_upload_to_database(
     except ValueError as e:
         logger.error(f"Invalid parameter values: {e}")
         return _error("INVALID_PARAMETER", f"Invalid parameter values: {str(e)}")
+    
+    # If data for the same period already exists (same year + cw_label + category),
+    # prompt the client to confirm overwrite unless force_import=true
+    try:
+        if not force_import:
+            # Normalize category to DB value if needed
+            from .report_importer import _normalize_category_for_db  # type: ignore
+            norm_category = _normalize_category_for_db(category)
+            if year and cw_label and norm_category:
+                existing_count = db.execute(
+                    text(
+                        """
+                        SELECT COUNT(*) AS cnt
+                        FROM project_history
+                        WHERE cw_label = :cw
+                          AND category = :cat
+                          AND EXTRACT(YEAR FROM log_date) = :yr
+                        """
+                    ),
+                    {"cw": cw_label, "cat": norm_category, "yr": int(year)}
+                ).scalar() or 0
+                if existing_count > 0:
+                    return {
+                        "status": "period_exists",
+                        "message": f"Data for {norm_category} {cw_label} {year} already exists. Overwrite to replace all entries for this period?",
+                        "year": year,
+                        "cw_label": cw_label,
+                        "category": norm_category,
+                        "existingCount": int(existing_count),
+                    }
+    except Exception as e:
+        logger.warning(f"Period-exists precheck failed: {e}")
     
     # If not forcing import, we still allow reuse of existing upload via importer logic.
     # So we don't block here; we only compute sha for logging/debug if needed.

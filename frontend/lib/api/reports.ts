@@ -238,7 +238,7 @@ export async function persistUpload(
   overrideYear?: string,
   overrideWeek?: string,
   overrideCategory?: string
-): Promise<PersistUploadResponse | DuplicateFileResponse> {
+): Promise<PersistUploadResponse | DuplicateFileResponse | { status: 'period_exists'; message: string; year: number; cw_label: string; category: string; existingCount: number } > {
   const form = new FormData();
   form.append("file", file, file.name);
   
@@ -276,6 +276,9 @@ export async function persistUpload(
   // Check if it's a duplicate detection response
   if (result.status === "duplicate_detected") {
     return result as DuplicateFileResponse;
+  }
+  if (result.status === "period_exists") {
+    return result as { status: 'period_exists'; message: string; year: number; cw_label: string; category: string; existingCount: number };
   }
   
   return result as PersistUploadResponse;
